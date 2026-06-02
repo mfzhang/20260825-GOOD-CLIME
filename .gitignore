@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Data (用户自行准备)
+data/
+
+# Caches (用户自行构建)
+cache/
+
+# Output (训练产物)
+output/
+
+# Logs
+*.log
