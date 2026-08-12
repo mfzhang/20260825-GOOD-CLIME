@@ -1,9 +1,12 @@
 """
-快速构建 V5 所需的数据缓存。
+CLIME 特征序列缓存构建。对应报告 Section 3.1 (时间划分)。
+
+从 normalized_features.parquet 构建 L=40 滑动窗口序列，
+按 train/val/holdout 三段时间切分存储。
 
 用法:
-  python build_v5_caches.py --split val_v5     # 单个
-  python build_v5_caches.py --split all         # 全部
+  python build_caches.py --split val_v5     # 单个
+  python build_caches.py --split all         # 全部
 """
 
 import argparse

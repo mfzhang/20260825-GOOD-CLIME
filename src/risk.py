@@ -1,13 +1,16 @@
 """
-risk.py — Risk Estimator: 基于 raw_panel 历史统计量估算每只股票的风险。
+CLIME 风险估计器。对应报告 Section 2.5 (Risk-Adjusted Scoring) + 附录 G。
 
-风险维度（4 核心）：
+基于 raw_panel 历史统计量的规则驱动模块（零可训练参数），
+4 维风险指标等权组合：
   1. realized_vol_20d   — 过去 20 日收益率标准差
   2. max_drawdown_20d    — 过去 20 日最大回撤
   3. amplitude_20d       — 过去 20 日平均 (high-low)/close
   4. liquidity_amount_20d — -log1p(mean(amount)) 成交额不足风险
 
-组合方式：截面上 z-score 标准化后等权相加。
+输出：final = z(alpha) - λ * z(risk)
+  离线实验 λ = 0（报告 Section 3）
+  模拟交易 λ = 0.3（报告 Section 4）
 """
 
 import numpy as np

@@ -1,14 +1,14 @@
 """
-train.py — V9CA_AB 模型训练入口。
+CLIME 模型训练入口。对应报告 Section 2.4 (Training Pipeline)。
 
 用法:
-  # Stage 1: 纯 backbone 预训练
+  # Stage 1: Backbone 预训练（报告 Section 2.4.1）
   python train.py --stage1
 
-  # V9CA_AB: 联合训练（需要先完成 Stage 1）
-  python train.py --v9ca-ab
-  python train.py --v9ca-ab --init-scale 0.3
-  python train.py --v9ca-ab --init-scale 0.3 --epochs 25
+  # Stage 2: CLIME 完整训练（报告 Section 2.4.2，需要先完成 Stage 1）
+  python train.py --clime
+  python train.py --clime --init-scale 0.3
+  python train.py --clime --init-scale 0.3 --epochs 25
 """
 
 import argparse
@@ -38,7 +38,7 @@ from src.data.dataset import (
     load_sequences, _cache_path_for, L as DEFAULT_L,
 )
 from src.models.transformer import TransformerPredictor
-from src.models.v9ca_ab import V9CA_ABModel
+from src.models.v9ca_ab import CLIMEModel
 from src.losses import pairwise_ranking_loss, directional_regression_loss
 from src.trainer import Trainer
 
@@ -68,7 +68,8 @@ CFG_STAGE1 = {
     "model_name": "transformer_v5_stage1",
 }
 
-CFG_V9CA_AB = {
+# CLIME Stage 2 训练配置。对应报告 Section 2.4.2 (Table 1 + 附录 H)。
+CFG_CLIME = {
     "lr_phase1": 1e-3,
     "lr_phase2_backbone": 1e-5,
     "lr_phase2_modulator": 5e-4,
@@ -82,7 +83,7 @@ CFG_V9CA_AB = {
     "patience": 8,
     "grad_clip": 1.0,
     "samples_per_day": 5000,
-    "model_name": "transformer_v9ca_ab",
+    "model_name": "clime",
     "loss_alpha": 3.0,
     "loss_beta": 0.5,
     "loss_delta": 0.01,
@@ -195,14 +196,17 @@ def train_stage1(args):
 
 
 # ===========================================================================
-# V9CXeralTrainer: 3-phase 训练器（V9CA_AB 使用）
+# CLIME Stage 2 三阶段课程训练器。对应报告 Section 2.4.2。
 # ===========================================================================
 
-class V9CXeralTrainer:
-    """Generic 3-phase trainer for V9C variants.
+class CLIMETrainer:
+    """CLIME Stage 2 三阶段课程训练器。对应报告 Section 2.4.2 (Table 1)。
 
-    Handles models with encoder, factor_heads, etc.
-    Uses directional regression loss + BCE warmup.
+    Phase 1 (BCE Warmup,  epochs 1-3):  Backbone 冻结, BCE 方向预热
+    Phase 2 (Core,        epochs 4-15): Backbone 解冻 (LR=1e-5), DirectionalReg
+    Phase 3 (Fine-tune,   epochs 16-25):全部 LR 降低, 精细收敛
+
+    支持 V9C 族模型（encoder, factor_heads, temporal_encoder, fusion 等）。
     """
 
     def __init__(self, model, train_ds, val_x, val_dyn, val_ret, val_ids,
@@ -323,7 +327,7 @@ class V9CXeralTrainer:
 
     def fit(self):
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        model_name = self.cfg.get("model_name", "v9cx")
+        model_name = self.cfg.get("model_name", "clime")
         n_bb = sum(p.numel() for p in self.model.backbone.parameters())
         n_head = sum(p.numel() for p in self.model.head.parameters())
         n_enc = sum(p.numel() for p in self.model.encoder.parameters()) \
@@ -331,14 +335,14 @@ class V9CXeralTrainer:
         n_other = sum(p.numel() for p in self.model.parameters()) - n_bb - n_head - n_enc
 
         print(f"\n{'='*60}")
-        print(f"{model_name}: Directional Regression + Additive Market Injection")
+        print(f"CLIME ({model_name}): 3-Phase Curriculum Training")
         print(f"  device={self.device} | epochs={self.max_epochs}")
         print(f"  Params: backbone={n_bb:,} | encoder={n_enc:,} | "
               f"head={n_head:,} | other={n_other:,}")
-        print(f"  Phase 1 (BCE): epoch 1-{self.cfg['phase1_epochs']}")
-        print(f"  Phase 2 (Reg): epoch {self.cfg['phase1_epochs']+1}"
+        print(f"  Phase 1 (BCE Warmup, 报告 Section 2.4.2): epoch 1-{self.cfg['phase1_epochs']}")
+        print(f"  Phase 2 (Core,      报告 Section 2.4.2): epoch {self.cfg['phase1_epochs']+1}"
               f"-{self.cfg['phase1_epochs']+self.cfg['phase2_epochs']}")
-        print(f"  Phase 3 (FT):  epoch "
+        print(f"  Phase 3 (Fine-tune, 报告 Section 2.4.2): epoch "
               f"{self.cfg['phase1_epochs']+self.cfg['phase2_epochs']+1}"
               f"-{self.max_epochs}")
         print(f"{'='*60}")
@@ -379,7 +383,7 @@ class V9CXeralTrainer:
         history_path = OUTPUT_DIR / f"{model_name}_history.json"
         with open(history_path, "w") as f:
             json.dump(self.history, f, indent=2)
-        print(f"\n{model_name} Done. Best epoch={self.best_epoch}, "
+        print(f"\nCLIME Stage 2 Done. Best epoch={self.best_epoch}, "
               f"Top-20 excess={self.best_metric:.6f}")
         return {"best_epoch": self.best_epoch, "best_metric": self.best_metric}
 
@@ -467,8 +471,8 @@ class V9CXeralTrainer:
             "elapsed_sec": round(elapsed, 1), **val_metrics,
         }
         self.history.append(entry)
-        model_name = self.cfg.get("model_name", "v9cx")
-        print(f"  E{epoch:3d}[{model_name}/{phase_tag}] | loss={train_loss:.4f} | "
+        model_name = self.cfg.get("model_name", "clime")
+        print(f"  E{epoch:3d}[CLIME/{phase_tag}] | loss={train_loss:.4f} | "
               f"SignAcc={val_metrics['sign_accuracy']:.3f} | "
               f"RMSE={val_metrics['rmse']:.4f} | "
               f"IC={val_metrics['rank_ic_mean']:.4f} | "
@@ -488,8 +492,8 @@ class V9CXeralTrainer:
 # 数据加载
 # ===========================================================================
 
-def _load_v9c_data():
-    """Load and prepare data for V9C variants."""
+def _load_clime_data():
+    """加载 CLIME Stage 2 训练数据。从缓存切片到 67 维特征。"""
     train_data = torch.load(
         _cache_path_for("train_v5", L_VAL, SPLITS["train_v5"][2]),
         weights_only=False,
@@ -522,15 +526,15 @@ def _load_v9c_data():
 # V9CA_AB 训练
 # ===========================================================================
 
-def train_v9ca_ab(args):
-    """V9CA_AB: Combined Scaled + Gated Injection (A+B)."""
-    cfg = dict(CFG_V9CA_AB)
+def train_clime(args):
+    """CLIME Stage 2: Scaled + Gated Injection 完整训练。对应报告 Section 2.4.2。"""
+    cfg = dict(CFG_CLIME)
     if args.epochs: cfg["max_epochs"] = args.epochs
     if args.batch_size: cfg["batch_size"] = args.batch_size
     if args.init_scale is not None:
         cfg["init_scale"] = args.init_scale
         is_tag = str(args.init_scale).replace(".", "p")
-        cfg["model_name"] = f"transformer_v9ca_ab_is{is_tag}"
+        cfg["model_name"] = f"clime_is{is_tag}"
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     stage1_path = args.stage1_ckpt or str(OUTPUT_DIR / "stage1_best.pt")
@@ -539,13 +543,13 @@ def train_v9ca_ab(args):
         sys.exit(1)
 
     print("=" * 60)
-    print("V9CA_AB: Scaled + Gated Injection (combined A+B)")
-    print(f"  Unit-norm offset + per-stock gate + learnable scale")
+    print("CLIME Stage 2: Scaled + Gated Injection (combined)")
+    print(f"  报告 Section 2.4.2: 3-Phase Curriculum Training")
     print(f"  init_scale: {cfg['init_scale']}  |  model_name: {cfg['model_name']}")
-    print(f"  Stage 1: {stage1_path}")
+    print(f"  Stage 1 ckpt: {stage1_path}")
     print("=" * 60)
 
-    train_data, val_data, train_dyn, val_dyn = _load_v9c_data()
+    train_data, val_data, train_dyn, val_dyn = _load_clime_data()
     train_ds = RegressionPeerDataset(
         train_data["sequences"], train_data["returns"], train_dyn,
         samples_per_day=cfg["samples_per_day"],
@@ -553,12 +557,13 @@ def train_v9ca_ab(args):
     val_x, val_dyn_arr, val_ret, val_ids, val_dates = \
         build_regression_peer_validation_arrays(val_data, val_dyn)
 
-    model = V9CA_ABModel(stage1_path, init_scale=cfg.get("init_scale", 0.1),
-                         gate_hidden=cfg.get("gate_hidden", 64))
+    model = CLIMEModel(stage1_path, init_scale=cfg.get("init_scale", 0.1),
+                       gate_hidden=cfg.get("gate_hidden", 64))
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"  V9CA_AB Model: params={n_params:,}")
+    print(f"  CLIME Model: params={n_params:,} "
+          f"(backbone ~2.3M + encoder ~0.5M + head)")
 
-    trainer = V9CXeralTrainer(
+    trainer = CLIMETrainer(
         model, train_ds, val_x, val_dyn_arr, val_ret, val_ids, val_dates, cfg)
     return trainer.fit()
 
@@ -568,15 +573,15 @@ def train_v9ca_ab(args):
 # ===========================================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="V9CA_AB Training")
+    parser = argparse.ArgumentParser(description="CLIME: Cross-Modal Injection via Learned Market Encoding — 训练入口")
     parser.add_argument("--stage1", action="store_true",
-                        help="Stage 1: backbone pretraining")
-    parser.add_argument("--v9ca-ab", action="store_true",
-                        help="Train V9CA_AB model")
+                        help="Stage 1: Backbone 预训练（报告 Section 2.4.1）")
+    parser.add_argument("--clime", "--v9ca-ab", action="store_true", dest="clime",
+                        help="Stage 2: CLIME 完整训练（报告 Section 2.4.2）")
     parser.add_argument("--stage1-ckpt", type=str, default=None,
-                        help="Path to Stage 1 checkpoint (for V9CA_AB)")
+                        help="Stage 1 checkpoint 路径（用于 Stage 2）")
     parser.add_argument("--init-scale", type=float, default=None,
-                        help="Override init_scale for V9CA_AB (default 0.1)")
+                        help="logit_scale 初始值（报告推荐 0.3, 附录 H）")
     parser.add_argument("--resume", type=str, default=None,
                         help="Stage 1: resume from checkpoint")
     parser.add_argument("--epochs", type=int, default=None)
@@ -591,10 +596,10 @@ def main():
 
     if args.stage1:
         result = train_stage1(args)
-    elif getattr(args, "v9ca_ab", False):
-        result = train_v9ca_ab(args)
+    elif getattr(args, "clime", False):
+        result = train_clime(args)
     else:
-        print("Usage: python train.py --stage1 | --v9ca-ab")
+        print("Usage: python train.py --stage1 | --clime")
         sys.exit(1)
 
     print(f"\n{'='*60}")

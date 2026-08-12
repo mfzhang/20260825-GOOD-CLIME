@@ -1,8 +1,13 @@
 """
-transformer.py — Transformer Encoder with RoPE.
+CLIME Backbone: Transformer Encoder with RoPE + Attention Pooling.
 
-Linear(67,128) → RoPE → 2×(MHA(4heads)+Res+LN+FFN(512)+Res+LN)
-→ last token → FC → score
+对应报告 Section 2.3.1 (Transformer Backbone)：
+  input_proj(67→256) → RoPE → 4×TransformerBlock(Pre-LN, 8 heads, FFN 1024)
+  → AttentionPooling → head → score
+
+注意：在 CLIME（Stage 2）中，backbone 的 attn_pool 和 head 不被使用；
+V9CA_ABModel（即 CLIME 最终模型）手动拆开 backbone，用 last-token 聚合
+和独立 head 替代。详见 src/models/v9ca_ab.py 及报告 Section 2.3.2–2.3.3。
 """
 
 import math
@@ -66,7 +71,11 @@ class TransformerBlock(nn.Module):
 
 
 class AttentionPooling(nn.Module):
-    """加性注意力池化：学习每个时间步的重要性权重，替代 last-token 聚合."""
+    """加性注意力池化：学习每个时间步的重要性权重。
+
+    对应报告 Section 2.3.1。注意：CLIME 最终模型（v9ca_ab.py）使用
+    last-token extraction 而非此模块；该模块仅在 Stage1 预训练时使用。
+    """
 
     def __init__(self, d_model: int = 256, d_attn: int = 128):
         super().__init__()
@@ -84,6 +93,12 @@ class AttentionPooling(nn.Module):
 
 
 class TransformerPredictor(nn.Module):
+    """CLIME Stage1 Backbone: Transformer + AttentionPooling + Prediction Head.
+
+    对应报告 Section 2.4.1 (Stage 1: Backbone Pretraining)。
+    Stage1 使用 Pairwise Ranking Loss 预训练此 backbone；
+    Stage2 中仅复用 input_proj / rope / blocks，attn_pool 和 head 被替换。
+    """
     def __init__(self, seq_len: int = L, feat_dim: int = D, d_model: int = 256,
                  n_heads: int = 8, n_layers: int = 4,
                  ffn_hidden: int = 1024, dropout: float = 0.1):

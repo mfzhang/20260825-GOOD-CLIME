@@ -1,15 +1,15 @@
 """
-backtest.py — V9CA_AB 回测。
+CLIME 回测评估。对应报告 Section 3 (Experiments) 评估协议。
 
-模拟真实交易:
-  - 每日按模型预测分数排序，选 top-N 股票等权持仓
-  - 计算累计收益、夏普比率、最大回撤、日胜率
-  - 对比等权市场基准
+Top-20 等权日调仓（报告 Section 3.2 Evaluation Protocol）：
+  - 每日按 CLIME 预测分数排序，选 top-N 等权持仓
+  - 计算累计收益、Sharpe、最大回撤、日胜率
+  - 对比等权市场基准（报告 Section 3.2 Metrics）
 
 用法:
-  python backtest.py --v9ca-ab
-  python backtest.py --v9ca-ab --split val_v5 --n 20
-  python backtest.py --v9ca-ab --split both --n 20
+  python backtest.py --clime
+  python backtest.py --clime --split val_v5 --n 20
+  python backtest.py --clime --split both --n 20
 """
 
 import argparse
@@ -28,7 +28,7 @@ CACHE_DIR = PROJECT_ROOT / "cache"
 OUTPUT_DIR = PROJECT_ROOT / "output" / "transformer_v5"
 
 from src.data.dataset import _cache_path_for
-from src.models.v9ca_ab import V9CA_ABModel
+from src.models.v9ca_ab import CLIMEModel
 
 RISK_FREE_RATE = 0.015
 
@@ -37,7 +37,8 @@ V5_SPLITS = {
     "holdout_v5": ("20251205", "20260429"),
 }
 
-V9C_SPLITS = {
+# CLIME 评估用数据划分。对应报告 Section 3.1 Table 1。
+CLIME_SPLITS = {
     "val_v5":     ("20250918", "20251204"),
     "holdout_v5": ("20251205", "20260511"),
 }
@@ -81,7 +82,8 @@ def compute_metrics(daily_rets: np.ndarray, daily_values: np.ndarray, n_dates: i
 
 # ---- V9CA_AB 回测 ----
 
-def _load_v9cx_ckpt(model_cls, ckpt_path: str, stage1_path: str):
+def _load_clime_ckpt(model_cls, ckpt_path: str, stage1_path: str):
+    """加载 CLIME checkpoint。"""
     model = model_cls(stage1_path)
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     sd = ckpt.get("model_state_dict", ckpt)
@@ -90,11 +92,12 @@ def _load_v9cx_ckpt(model_cls, ckpt_path: str, stage1_path: str):
     return model
 
 
-def _backtest_split_v9cx(split_name: str, model: torch.nn.Module,
+def _backtest_split_clime(split_name: str, model: torch.nn.Module,
                           device: torch.device, top_n: int, label: str):
-    start_date, end_date = V9C_SPLITS[split_name]
+    """对单个 split 运行 CLIME 回测。对应报告 Section 3.2 协议。"""
+    start_date, end_date = CLIME_SPLITS[split_name]
     print(f"\n{'='*70}")
-    print(f"  {label} Backtest: {split_name}  ({start_date} ~ {end_date})  Top-N={top_n}")
+    print(f"  CLIME ({label}) Backtest: {split_name}  ({start_date} ~ {end_date})  Top-N={top_n}")
     print(f"{'='*70}")
 
     seqs, returns, codes, dates = load_v5_data(split_name)
@@ -178,12 +181,12 @@ def _backtest_split_v9cx(split_name: str, model: torch.nn.Module,
     }
 
 
-def _run_v9cx_backtest(label: str, model_cls, ckpt_path: str, stage1_path: str,
+def _run_clime_backtest(label: str, model_cls, ckpt_path: str, stage1_path: str,
                         device: torch.device, top_n: int, output_dir: Path):
     all_results = {}
     for split in ["val_v5", "holdout_v5"]:
-        m = _load_v9cx_ckpt(model_cls, ckpt_path, stage1_path)
-        all_results[split] = _backtest_split_v9cx(split, m, device, top_n, label)
+        m = _load_clime_ckpt(model_cls, ckpt_path, stage1_path)
+        all_results[split] = _backtest_split_clime(split, m, device, top_n, label)
     output_path = output_dir / f"backtest_{label.lower()}_results.json"
     with open(output_path, "w") as f:
         json.dump(all_results, f, indent=2, default=str)
@@ -194,13 +197,13 @@ def _run_v9cx_backtest(label: str, model_cls, ckpt_path: str, stage1_path: str,
 # ---- CLI ----
 
 def main():
-    parser = argparse.ArgumentParser(description="V9CA_AB Backtest")
+    parser = argparse.ArgumentParser(description="CLIME 回测评估")
     parser.add_argument("--split", type=str, default="both",
                         choices=["val_v5", "holdout_v5", "both"])
-    parser.add_argument("--v9ca-ab", action="store_true",
-                        help="Run V9CA_AB backtest")
-    parser.add_argument("--v9ca-ab-ckpt", type=str, default=None,
-                        help="V9CA_AB checkpoint path")
+    parser.add_argument("--clime", "--v9ca-ab", action="store_true", dest="clime",
+                        help="Run CLIME backtest")
+    parser.add_argument("--clime-ckpt", "--v9ca-ab-ckpt", type=str, default=None, dest="clime_ckpt",
+                        help="CLIME checkpoint path")
     parser.add_argument("--stage1", type=str, default=None,
                         help="Stage 1 checkpoint path")
     parser.add_argument("--n", type=int, default=20,
@@ -211,13 +214,13 @@ def main():
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     stage1_path = args.stage1 or str(OUTPUT_DIR / "stage1_best.pt")
 
-    if args.v9ca_ab:
-        ckpt_path = args.v9ca_ab_ckpt or str(OUTPUT_DIR / "transformer_v9ca_ab_best.pt")
-        all_results = _run_v9cx_backtest(
-            "V9CA_AB", V9CA_ABModel, ckpt_path, stage1_path, device, args.n, OUTPUT_DIR)
+    if args.clime:
+        ckpt_path = args.clime_ckpt or str(OUTPUT_DIR / "clime_best.pt")
+        all_results = _run_clime_backtest(
+            "CLIME", CLIMEModel, ckpt_path, stage1_path, device, args.n, OUTPUT_DIR)
         return
 
-    print("Usage: python backtest.py --v9ca-ab [--split val_v5|holdout_v5|both]")
+    print("Usage: python backtest.py --clime [--split val_v5|holdout_v5|both]")
     sys.exit(1)
 
 

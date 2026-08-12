@@ -1,12 +1,13 @@
 """
-build_v7_peer_data.py — 构建 V7 genuine peer mapping + 24-dim peer dynamics。
+CLIME Peer Dynamics 构建。对应报告 Section 2.2.2 + 附录 B。
 
-Peer 选择: 多维相似度 (industry, act_name, area, market, act_ent_type, return corr)
-Peer dynamics: 24 个预计算统计特征
+基于多维相似度（行业 0.30 + 业务名称 0.25 + 地区 0.10 + 市场 0.10 +
+企业类型 0.10 + 20日收益相关性 0.15）选取 top-10 相似同业，
+聚合得到 24 维 peer dynamics 特征。
 
 输出:
-  cache/v7_peer_mapping_{split}_L40_step{step}.pt
-  cache/v7_peer_dynamics_{split}_L40_step{step}.pt
+  cache/v7_peer_mapping_{split}_L40_step{step}.pt   (peer 索引映射)
+  cache/v7_peer_dynamics_{split}_L40_step{step}.pt  (24 维 dynamics)
 """
 
 import sys

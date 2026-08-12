@@ -1,27 +1,18 @@
 """
-daily_inference.py — V9CA_AB is0.3 每日推理脚本
+CLIME 每日推理脚本。对应报告 Section 2.5 (Risk-Adjusted Scoring) + Section 4 (Trading)。
 
 用法:
-    # 单日推理
     python daily_inference.py --date 20260529
-
-    # 指定资金量，自动计算持仓手数
     python daily_inference.py --date 20260529 --capital 1000000
-
-    # 多日模拟
     python daily_inference.py --dates 20260512,20260513,20260514
-
-    # 输出 CSV 用于提交
     python daily_inference.py --date 20260529 --output result.csv
 
-工作流程:
-    1. 可选: 重建 raw_panel + normalized_features（仅新数据到来时需要）
-    2. 构建目标日期的推理序列 [N, 40, 67] + peer_dyn [N, 24]
-    3. 计算 risk_score [N]
-    4. V9CA_AB 模型推理 → alpha_score
-    5. 两阶段: top-10% alpha → z(alpha) - 0.3*z(risk) → top-20
-    6. Softmax 权重分配
-    7. 输出推荐列表（代码 + 名称 + 权重）
+选择流程（对应报告 Section 2.5）:
+    1. CLIME 模型推理 → alpha_score
+    2. 风险估计器 → risk_score（报告附录 G）
+    3. Two-stage: top-10% alpha pool → z(alpha) - λ·z(risk) → top-20
+       (离线实验 λ=0, 模拟交易 λ=0.3, 见报告 Section 2.5)
+    4. Softmax 温度权重分配 → 输出推荐列表
 """
 import sys
 import argparse
@@ -39,15 +30,16 @@ CACHE_DIR = PROJECT_ROOT / "cache"
 OUTPUT_DIR = PROJECT_ROOT / "output" / "transformer_v5"
 DATA_DIR = PROJECT_ROOT / "data"
 
-V9_FEATURE_INDICES = list(range(66)) + [86]  # 67 dims used by V9
+# CLIME 使用的 67 维特征索引: feat_1~66 + lag_norm(idx=86, 0-based)
+CLIME_FEATURE_INDICES = list(range(66)) + [86]
 L_SEQ = 40
 BATCH_SIZE = 4096
-LAMBDA_RISK = 0.3
+LAMBDA_RISK = 0.3    # 模拟交易用 λ=0.3（报告 Section 2.5）
 TOP_PCT = 0.10
 TOP_N = 20
 
 STAGE1_PATH = str(OUTPUT_DIR / "stage1_best.pt")
-DEFAULT_V9CA_AB_PATH = str(OUTPUT_DIR / "transformer_v9ca_ab_is0p3_best.pt")
+DEFAULT_CLIME_PATH = str(OUTPUT_DIR / "clime_is0p3_best.pt")
 
 # 用于 softmax 的 temperature（越小越集中，越大越平均）
 WEIGHT_TEMPERATURE = 0.5
@@ -199,9 +191,9 @@ def compute_peer_for_single_date(
     day_codes: List[str],
     day_seqs_raw: np.ndarray,
 ) -> np.ndarray:
-    """为单日计算 24 维 peer dynamics。
+    """为单日计算 24 维 peer dynamics。对应报告 Section 2.2.2 + 附录 B。
 
-    复用 build_v7_peer_data.py 中的 compute_genuine_peers + compute_peer_dynamics。
+    复用 build_peer_dynamics 中的 compute_genuine_peers + compute_peer_dynamics。
     """
     from build_peer_dynamics import load_basic_info, compute_genuine_peers, compute_peer_dynamics
 
@@ -252,13 +244,13 @@ def compute_risk_for_single_date(
 # ===========================================================================
 
 def load_model(path: str = None, init_scale: float = 0.3):
-    """加载 V9CA_AB 模型（支持 is0.2/0.3/0.5 等变体）。"""
+    """加载 CLIME 模型。"""
     if path is None:
-        path = DEFAULT_V9CA_AB_PATH
+        path = DEFAULT_CLIME_PATH
 
-    from src.models.v9ca_ab import V9CA_ABModel
+    from src.models.v9ca_ab import CLIMEModel
 
-    model = V9CA_ABModel(STAGE1_PATH, init_scale=init_scale)
+    model = CLIMEModel(STAGE1_PATH, init_scale=init_scale)
     ckpt = torch.load(path, map_location="cpu", weights_only=False)
     sd = ckpt.get("model_state_dict", ckpt)
     model.load_state_dict(sd, strict=False)
@@ -267,22 +259,22 @@ def load_model(path: str = None, init_scale: float = 0.3):
 
 
 def run_inference(
-    day_seqs: np.ndarray,      # [N, L, 87]
+    day_seqs: np.ndarray,      # [N, L, 87] 全特征序列
     peer_dyn: np.ndarray,       # [N, 24]
     risk_scores: np.ndarray,    # [N]
     model,
     device: torch.device,
-    v9_feat_indices: List[int] = V9_FEATURE_INDICES,
+    feat_indices: List[int] = CLIME_FEATURE_INDICES,
     lambda_risk: float = LAMBDA_RISK,
     top_pct: float = TOP_PCT,
     top_n: int = TOP_N,
     temperature: float = WEIGHT_TEMPERATURE,
 ) -> Dict:
-    """运行一次推理，返回 top-N 结果及权重。"""
+    """CLIME 推理 + 两阶段选股。对应报告 Section 2.5。"""
     N = day_seqs.shape[0]
 
-    # 切片到 V9 用到的 67 维
-    x_full = day_seqs[:, :, v9_feat_indices]  # [N, L, 67]
+    # 切片到 CLIME 用到的 67 维（报告 Section 2.2.1）
+    x_full = day_seqs[:, :, feat_indices]  # [N, L, 67]
 
     # 批量推理
     alpha_scores = np.zeros(N, dtype=np.float32)
@@ -408,16 +400,16 @@ def daily_pipeline(
     output_csv: str = None,
     temperature: float = WEIGHT_TEMPERATURE,
 ) -> Dict:
-    """完整的日度推理流程（V9CA_AB is0.3）。"""
+    """完整的日度推理流程（CLIME）。"""
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if model_path is None:
-        model_path = DEFAULT_V9CA_AB_PATH
+        model_path = DEFAULT_CLIME_PATH
 
     print(f"\n{'#'*70}")
-    print(f"# Daily Inference Pipeline: {date_str}")
-    print(f"# Model: V9CA_AB is0.3  |  Path: {model_path}")
+    print(f"# CLIME Daily Inference: {date_str}")
+    print(f"# Model path: {model_path}")
     print(f"{'#'*70}")
 
     # Step 1: 更新 raw_panel（如果需要）
@@ -470,7 +462,7 @@ def daily_pipeline(
     print(f"  Risk scores: mean={risk_scores.mean():.3f}, std={risk_scores.std():.3f}")
 
     # Step 6: Inference
-    print(f"\n[Step 6/6] Running V9CA_AB inference...")
+    print(f"\n[Step 6/6] Running CLIME inference...")
     model = load_model(model_path)
     model.to(device)
 
@@ -534,7 +526,7 @@ def simulate_dates(
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     print(f"\n{'#'*70}")
-    print(f"# Simulation: {len(dates)} dates  |  Model: V9CA_AB is0.3")
+    print(f"# CLIME Simulation: {len(dates)} dates")
     print(f"# Dates: {dates}")
     print(f"{'#'*70}")
 
@@ -621,7 +613,7 @@ def main():
     parser.add_argument("--rebuild", action="store_true",
                         help="Force rebuild of raw_panel + normalized_features")
     parser.add_argument("--model-path", type=str, default=None,
-                        help="模型 checkpoint 路径（默认：transformer_v9ca_ab_is0p3_best.pt）")
+                        help="模型 checkpoint 路径（默认：clime_is0p3_best.pt）")
     parser.add_argument("--lambda-risk", type=float, default=LAMBDA_RISK)
     parser.add_argument("--top-n", type=int, default=TOP_N)
     parser.add_argument("--top-pct", type=float, default=TOP_PCT)

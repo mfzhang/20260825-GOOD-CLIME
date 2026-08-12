@@ -1,9 +1,16 @@
 """
-trainer.py — 训练循环 + validation 指标 + early stopping + checkpoint。
+CLIME Stage 1 训练器。对应报告 Section 2.4.1 (Backbone Pretraining)。
+
+提供完整的 Stage 1 训练循环：
+  - Pairwise Ranking Loss 训练
+  - 逐日验证（RankIC + Top-K Excess Return）
+  - Early stopping + checkpoint 管理
 
 外部接口:
   trainer = Trainer(model, train_ds, val_data, cfg)
-  trainer.fit()
+  trainer.fit() → 保存 best.pt
+
+注意：此 Trainer 仅用于 Stage 1；Stage 2 使用 train.py 中的多阶段训练器。
 """
 
 from __future__ import annotations

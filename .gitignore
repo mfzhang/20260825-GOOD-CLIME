@@ -14,3 +14,24 @@ output/
 
 # Logs
 *.log
+
+# LaTeX 中间产物
+*.aux
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.bbl
+*.blg
+*.nav
+*.snm
+*.vrb
+*.lof
+*.lot
+
+# 报告中间产物（不入库）
+final_report/render_check/
+final_report/rendered_pages/
+final_report/record_tiles/
+final_report/record.png

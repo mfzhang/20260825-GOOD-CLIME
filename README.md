@@ -1,279 +1,368 @@
-# V9CA_AB is0.3 — 基于 Transformer 的 A 股量化选股模型
+# CLIME — Cross-Modal Injection via Learned Market Encoding
 
-基于 Transformer + RoPE 架构的 A 股日频选股模型。核心思路：在 Stage1 backbone 预训练（pairwise ranking）基础上，通过 **Scaled Gated Injection** 机制将市场级 peer dynamics 信息注入个股表征空间（256-dim），实现市场环境自适应的股票排序。
+**跨模态市场信息注入的股票排序模型**：面向 A 股日频选股的 Transformer 横截面排序模型。
 
-## 关键结果
+CLIME 将次日收益预测建模为横截面 top-K 排序任务（每日约 4000–5000 只股票中判断哪些值得进入 top-20 组合），通过 **ScaledGatedEncoder** 将同业动态（peer dynamics）与市场上下文（market context）以受控加法方式注入 Backbone 表征空间，实现市场环境自适应的股票排序。项目为「深度学习基础」课程大作业，完整方法论与实验分析见 [final_report/main.pdf](final_report/main.pdf)。
 
-| 指标 | Validation (202509-202512) | Holdout (202512-202605) |
-|------|---------------------------|-------------------------|
-| 累计超额收益 (vs 等权基准) | +52.98% | +148.44% |
-| 年化 Sharpe Ratio | 7.71 | 7.98 |
-| 最大回撤 | 6.56% | 6.56% |
-| 月度胜率 (vs 基准) | 100% (6/6) | 100% (6/6) |
+## 目录
 
-## 架构
+- [简介](#简介)
+- [快速开始](#快速开始)
+- [核心结果](#核心结果)
+- [方法概览](#方法概览)
+- [代码结构](#代码结构)
+- [报告](#报告)
+- [安装与运行](#安装与运行)
+- [交易模拟](#交易模拟)
+- [消融实验](#消融实验)
+- [版本演进概要](#版本演进概要)
+- [复现说明](#复现说明)
+- [FAQ](#faq)
+- [许可与致谢](#许可与致谢)
+
+---
+
+## 简介
+
+A 股日频选股本质上是一个**横截面排序问题**：模型不需要精确预测单只股票次日收益，而是需要在每天上千只股票中给出可靠的相对排序，从而稳定选出 top-20 组合。这一视角带来两个直接后果：一是训练目标应贴近排序/方向决策而非逐点回归；二是单只股票的时序序列缺乏「同业相对强弱」与「市场整体环境」这两类横截面上下文。
+
+CLIME（Cross-Modal Injection via Learned Market Encoding）针对以上两点做出三项设计：
+
+1. **两阶段课程训练**：Stage-1 用 pairwise ranking 损失预训练纯 Backbone，习得可靠的横截面排序表示；Stage-2 以 BCE 方向预热 → Directional Regression Loss 精调，从易到难引导收敛。
+2. **ScaledGatedEncoder（受控加法注入）**：将 peer dynamics（24 维）与 market context（8 维）经方向网络 + 门控 + 全局 scale 三者约束后，以加法方式注入 Backbone 表征，显式保护预训练表示不被覆盖（对比 FiLM 乘性调制）。
+3. **非对称 Directional Regression Loss**：对方向错误施加 3 倍惩罚、对保守悲观预测降低权重，使逐点回归目标与排序/方向目标对齐。
+
+在 holdout 测试集（2025-12-05 至 2026-05-11，100 个交易日）上，CLIME 取得 **+137.15% 累计收益 / +123.14% 超额收益（Sharpe 6.94）**，显著优于最强线性基线 Ridge（+91.65% 超额）。消融实验表明训练策略组件（Stage-1 预训练、课程预热）的贡献大于架构组件，且全部分解结果均支撑上述设计取舍。同花顺模拟交易 −19.40% 被解释为执行层异常的案例，说明 alpha predictor、组合构建与执行必须作为独立模块分别建模。
+
+> **重要免责声明**：本文及代码报告的全部收益数字均为 **Top-20 等权日调仓、零交易成本、t+1 收盘价成交** 下的选股信号上限估计，**非可实现的策略净收益**。真实交易还需叠加手续费、滑点、涨跌停、T+1 约束与流动性成本。详见报告附录 B（Evaluation Details）。
+
+## 快速开始
+
+```bash
+# 1. 安装依赖
+pip install -r requirements.txt
+
+# 2. 准备数据并构建缓存（data/ 需自行放置课程提供的 A 股日频数据，见下方「数据准备」）
+python build_caches.py --split all
+python build_peer_dynamics.py
+
+# 3. 训练 + 回测
+python train.py --stage1                                    # Stage 1 Backbone 预训练（~2h, A100）
+python train.py --clime --init-scale 0.3                    # Stage 2 CLIME 完整训练（~1.5h, A100）
+python backtest.py --clime --stage1 output/transformer_v5/stage1_best.pt
+```
+
+## 核心结果
+
+以下为 holdout 测试集（2025-12-05 至 2026-05-11，100 个交易日）上 **Top-20 等权日调仓、零交易成本** 的信号评估结果（报告 Section 3, RQ1）。市场等权组合同期累计收益为 **+14.01%**。
+
+| 模型 | 累计收益 | 超额收益 | Sharpe | 最大回撤 | 日胜率 | 月胜率 |
+|---|---|---|---|---|---|---|
+| **CLIME** | **+137.15%** | **+123.14%** | **6.94** | 8.03% | 65.0% | 6 / 6 |
+| Ridge（最强线性基线） | +105.66% | +91.65% | 5.91 | 6.50% | 68.0% | 5 / 6 |
+| LightGBM | +105.34% | +91.33% | 3.67 | 14.34% | 61.0% | 6 / 6 |
+| XGBoost | +93.21% | +79.20% | 3.45 | 12.70% | 57.0% | 6 / 6 |
+| GRU | +13.92% | −0.09% | 0.02 | 12.48% | 43.0% | 3 / 6 |
+| MLP | −17.17% | −31.18% | −2.05 | 28.95% | 34.0% | 1 / 6 |
+
+CLIME 在 6 个持有月全部取得正超额；9 段历史极端行情回测（2018 贸易战、2020 COVID、2022 封城、2024 微盘股崩盘等）全部录得正超额，其中 2024 Q3–Q4 政策牛市期间全市场等权 −5.60%，CLIME 累计 +107.38%、超额 +112.98%。
+
+### 内部分析（RQ3）
+
+模型并非黑箱：Jacobian 有效秩为 1（第一奇异值占 95% 以上方差），线性探针 AUC 0.806（Spearman ρ 0.415），线性分解 R² 0.206（非线性方差占比 79.4%）。top-20 日均超额分解中，全模型 +2.15%、仅线性分量 +2.12%、仅非线性残差 +0.15%，说明排序信息主要由线性分量承载。
+
+![Jacobian 奇异值谱](final_report/figures/fig1_jacobian_spectrum.png)
+
+![各层表征 PCA 分离演化](final_report/figures/figB_representation_evolution.png)
+
+## 方法概览
+
+CLIME 采用双流设计：Backbone 处理个股特征序列，ScaledGatedEncoder 处理同业动态与市场上下文，二者在 256 维表征空间通过加法融合。
+
+![CLIME 架构](final_report/figures/architecture.png)
+
+![两阶段训练流程](final_report/figures/training.png)
 
 ```
-x [B, L, 67]              peer_dyn [B, 24]
-     |                         |
-     v                         v
-+--------------+    +----------------------+
-|  Backbone    |    |  Market Encoder      |
-|  (Stage1)    |    |  MLP(32->256, 3 层)  |
-|              |    |  = peer_dyn[24]      |
-| input_proj   |    |  + market_ctx[8]     |
-|  -> rope     |    |  -> Linear(256, 256) |
-|  -> blocksx4 |    |  -> raw_offset[B,256]|
-|  -> last     |    +----------+-----------+
-|    [B, 256]  |               |
-+------+-------+    +----------+-----------+
-       |            |  ScaledGatedEncoder  |
-       |            |  A: unit-norm offset |
-       |            |     + tanh scale     |
-       |            |  B: per-stock gate   |
-       |            |     in [0, 1]        |
-       |            +----------+-----------+
-       |                       |
-       +-----------+-----------+
-                   v
-         h' = h + gate * scale * offset
-                   |
-                   v
-            head -> score [B]
+ x [B, L=40, F=67]           peer_dyn [B, 24]
+       |                            |
+       v                            v
++------------------+    +---------------------------+
+|  Backbone        |    |  ScaledGatedEncoder       |
+|  (Stage1 预训练)  |    |  (报告 Section 2.3.2)     |
+|                  |    |                           |
+|  input_proj      |    |  peer_dyn [24]            |
+|    → 256 dim     |    |  + market_ctx [8]         |
+|  RoPE            |    |    → offset_net (3×MLP)   |
+|  4× Transformer  |    |    → gate_net (Sigmoid)   |
+|  (Pre-LN, 8头)   |    |    → logit_scale (tanh)   |
+|  last-token      |    +-------------+-------------+
+|    → [B, 256]    |                  |
++--------+---------+                  v
+         |        offset = gate · tanh(s) · û/||û|| · √256
+         |                  |
+         +--------+---------+
+                  v
+       h' = h + offset   (广播至全部 40 个时间步)
+                  |
+                  v
+       RoPE → 4×TransformerBlock → last-token
+                  |
+                  v
+            head → score [B]
 ```
 
 ### 核心设计原则
 
-1. **正确的调制层级**：市场信息注入在 256-dim 表征空间，不在 67-dim 特征空间。特征空间的任何修改都会破坏 backbone 已学到的表示
-2. **信息瓶颈**：24+8=32 -> 256 -> 256，3 层 MLP 不做显式压缩，靠最后 Linear 的随机初始化（std=0.001）自然形成低秩注入
-3. **加法优于乘法**：`h' = h + offset`（而非 `h' = gamma * h`），保留 backbone 原始判断
-4. **per-stock 选择性**：gate 网络（MLP 8->64->1->Sigmoid）让模型为每只股票学习不同的市场敏感度
+1. **加法注入（$h' = h + \text{offset}$）**：保留 Backbone 原始判断，市场信息仅作增量修正。与 FiLM 乘性调制（$\gamma \odot h + \beta$）的对比见报告 Section 2.3.3 及附录 E。
+2. **三重约束**：
+   - **方向归一化**（$\hat{\mathbf{u}} / \|\hat{\mathbf{u}}\|$）：offset_net 只控制方向，不控制幅度；
+   - **逐股票门控**（$g \in [0, 1]$）：不同股票可接收不同程度的市场修正；
+   - **全局幅度约束**（$\tanh(s) \cdot \sqrt{256}$）：可学习但受 tanh 限制。
+3. **正确的调制层级**：注入发生在 256 维表征空间（Backbone output projection 之后），而非 67 维输入特征空间或最终标量分数之上。
+4. **两阶段课程训练**：Stage-1 pairwise ranking 预训练 → Stage-2 BCE 方向预热 → DirectionalReg 核心训练 → 低学习率精调。训练策略的消融影响大于架构组件（报告 Section 3, RQ2）。
 
-## 目录结构
+**模型规模**：总参数量约 2.8M（Backbone 约 2.3M + ScaledGatedEncoder 约 0.5M）；L=40 日、F=67 维、peer dynamics 24 维、market context 8 维；hidden 256、8 heads、4 层、FFN 1024、RoPE。
+
+## 代码结构
 
 ```
 reconstruct_code/
-|-- train.py                   # 训练入口 (Stage1 + V9CA_AB)
-|-- backtest.py                # 回测评估
-|-- daily_inference.py         # 每日推理 & 选股
-|-- build_caches.py            # 从 parquet 构建特征序列缓存
-|-- build_peer_dynamics.py     # 构建 peer dynamics 缓存
-|-- README.md
-|-- requirements.txt
-|-- data/                      # [用户准备] 原始数据目录 (见下方说明)
-|-- cache/                     # [自动生成] 特征序列 + peer dynamics 缓存
-|-- output/                    # [自动生成] 训练 checkpoint + 日志 + 回测结果
-`-- src/
-    |-- losses.py              # pairwise ranking loss + directional regression loss
-    |-- trainer.py             # Stage1 训练循环
-    |-- risk.py                # 风险评分 (波动率/回撤/振幅/流动性)
-    |-- models/
-    |   |-- transformer.py     # Transformer 骨架 (RoPE + MHA + FFN)
-    |   `-- v9ca_ab.py         # V9CA_AB 模型 (ScaledGatedEncoder)
-    `-- data/
-        |-- dataset.py         # 数据集类 & 序列构建
-        |-- features.py        # 特征计算
-        |-- preprocess.py      # 标准化、Winsorize、缺失值填充
-        `-- loader.py          # 原始 CSV 数据加载器
+├── train.py                     # 训练入口 (Stage 1 + Stage 2)
+├── backtest.py                  # 回测评估 (Top-20 等权日调仓)
+├── daily_inference.py           # 每日推理与选股输出
+├── build_caches.py              # 特征序列缓存构建
+├── build_peer_dynamics.py       # Peer dynamics 缓存构建
+├── requirements.txt             # Python 依赖
+├── README.md                    # 本文档
+├── final_report/                # 完整报告（LaTeX 源码 + PDF + 图）
+├── data/                        # [用户准备] 原始数据 (见下方说明)
+├── cache/                       # [自动生成] 标准化特征 + 序列 + peer dynamics
+├── output/                      # [自动生成] 模型 checkpoint + 日志 + 回测结果
+└── src/
+    ├── losses.py                # Pairwise ranking loss + Directional regression loss
+    ├── trainer.py               # Stage 1 训练循环 (early stopping + checkpoint)
+    ├── risk.py                  # 风险估计器 (报告 Section 2.5, 附录 G)
+    ├── models/
+    │   ├── transformer.py       # Backbone: Transformer + RoPE + AttentionPooling
+    │   └── v9ca_ab.py           # CLIME 完整模型: ScaledGatedEncoder + head
+    └── data/
+        ├── loader.py            # 原始 CSV 并行加载与合并
+        ├── features.py          # 86 维特征计算 (报告附录 A)
+        ├── preprocess.py        # 缺失值填充 + Winsorize + 截面 z-score
+        └── dataset.py           # PairDataset / RegressionPeerDataset / 序列构建
 ```
 
-## 安装
+**报告章节与代码对应关系：**
+
+| 报告章节 | 对应代码 |
+|---|---|
+| Section 2.1 (Problem Formulation) | `src/data/dataset.py` — L=40, F=67, 滑动窗口构建 |
+| Section 2.2 (Feature Design) | `src/data/features.py` — 86 维特征计算; `build_peer_dynamics.py` — 24 维 peer dynamics |
+| Section 2.3 (Model Architecture) | `src/models/transformer.py` (Backbone) + `src/models/v9ca_ab.py` (CLIME 完整模型) |
+| Section 2.4 (Training Pipeline) | `train.py` (Stage1+Stage2) + `src/losses.py` + `src/trainer.py` |
+| Section 2.5 (Risk-Adjusted Scoring) | `src/risk.py` — 规则驱动风险估计器 |
+| Section 3 (Experiments) | `backtest.py` — Top-20 等权日调仓回测 |
+| Section 4 (Trading Simulation) | `daily_inference.py` — 每日推理与选股输出 |
+| 附录 A (Feature Definitions) | `src/data/features.py` — 完整特征名列表 `FEATURE_NAMES` |
+| 附录 D (Complete Hyperparameters) | `train.py` — `CFG_STAGE1` / `CFG_CLIME` 字典 |
+| 附录 G (Risk Config) | `src/risk.py` — 风险维度与权重配置 |
+
+## 报告
+
+完整报告见 **[final_report/main.pdf](final_report/main.pdf)**（LaTeX 源码在 `final_report/`，可直接编译；GitHub 支持在线预览 PDF）。
+
+```
+final_report/
+├── main.tex                      # 报告入口，\input 全部 sections
+├── main.pdf                      # 编译产物（约 32 页）
+├── sections/                     # abstract / introduction / methodology /
+│                                 #   experiment / trading / discussion / appendix
+├── figures/                      # 架构图、训练流程、消融与内部分析图
+├── literature_survey.md          # 文献调研笔记（LTR / RLHF / 加性注入相关）
+├── trading_simulation_summary.md # 模拟交易总结（-19.40% 执行层归因）
+├── trading_records_from_pic.md   # 模拟交易逐日记录复盘
+└── pic/                          # 模拟交易行情截图
+```
+
+报告附录覆盖：A 特征定义、B 评估细节（防前瞻偏差 + 与真实交易差异）、C 复现指南、D 完整超参数、E 版本演进、F checkpoint 索引、G 风险预测器配置。
+
+## 安装与运行
+
+### 环境要求
+
+- Python 3.10+
+- CUDA 12.1+（推荐；CPU 也可运行但回测较慢）
+- NVIDIA A100 80GB（训练用；Stage 1 约 2 小时，Stage 2 约 1.5 小时）
 
 ```bash
 pip install -r requirements.txt
 ```
 
-依赖项：`torch`, `numpy`, `pandas`, `scipy`, `tqdm`, `pyarrow`。
+依赖（见 `requirements.txt`）：`torch>=2.0.0`, `numpy>=1.24.0`, `pandas>=2.0.0`, `scipy>=1.10.0`, `tqdm>=4.64.0`, `pyarrow>=10.0.0`。无其他第三方依赖。
 
-## 数据准备
+### 数据准备
 
-### 原始数据目录结构
-
-请将以下数据放入 `data/` 目录：
+原始 A 股日频数据（课程提供）按以下结构放入 `data/` 目录（本仓库不含原始数据）：
 
 ```
 data/
-|-- basic.csv                  # 股票基础信息 (ts_code, industry, area, market, act_name, act_ent_type)
-|-- trade_cal.csv              # 交易日历
-|-- daily/                     # 个股日频行情 (按日期存储, 每个 CSV 为一个交易日)
-|-- daily_open/                # 开盘价数据 (按日期存储)
-|-- metric/                    # 基本面指标 (PE, PB, 换手率, 总市值等)
-|-- moneyflow/                 # 资金流向数据 (大单/中单/小单/特大单买卖)
-|-- market/                    # 市场指数数据 (上证/沪深300/创业板)
-|-- index_weight/              # 指数成分股及权重
-|-- stock_st/                  # ST 股票清单 (按日期存储)
-`-- news/                      # 新闻快讯数据
+├── basic.csv                    # 股票基础信息 (ts_code, industry, area, market, act_name, act_ent_type, list_date)
+├── trade_cal.csv                # 交易日历 (cal_date, is_open, pretrade_date)
+├── daily/                       # 个股日频行情 (文件命名: YYYYMMDD.csv)
+├── daily_open/                  # 开盘价数据
+├── metric/                      # 基本面指标 (PE, PB, 换手率, 总市值等)
+├── moneyflow/                   # 资金流向 (大单/中单/小单/特大单买卖)
+├── market/                      # 市场指数 (000001.SH, 000300.SH, 399006.SZ)
+├── index_weight/                # 指数成分股及权重
+├── stock_st/                    # ST 股票清单 (文件命名: YYYYMMDD.csv)
+└── news/                        # 新闻快讯 (本项目未使用)
 ```
 
-### 数据格式说明
+**数据划分**（与报告 Section 3 Table 1 一致）：
 
-| 目录 | 关键字段 |
-|------|---------|
-| `daily/` | ts_code, trade_date, open, high, low, close, pre_close, pct_chg, vol, amount, vwap |
-| `metric/` | ts_code, trade_date, turnover_rate, pe, pe_ttm, pb, total_mv, circ_mv, total_share, float_share |
-| `moneyflow/` | ts_code, trade_date, buy_lg_vol, sell_lg_vol, buy_elg_vol, sell_elg_vol, net_mf_vol, net_mf_amount |
-| `stock_st/` | ts_code, trade_date, type, type_name |
-| `basic.csv` | ts_code, industry, act_name, area, market, act_ent_type, list_date |
-| `trade_cal.csv` | cal_date, is_open, pretrade_date |
+| Split | 日期范围 | 交易日 | Step | 用途 |
+|---|---|---|---|---|
+| train_v5 | 2016-01-04 至 2025-09-17 | ~1700 | 10 | Stage 1 + Stage 2 训练 |
+| val_v5 | 2025-09-18 至 2025-12-04 | 50 | 1 | 早停与超参数选择 |
+| holdout_v5 | 2025-12-05 至 2026-05-11 | 100 | 1 | 最终评估（仅使用一次） |
 
-`daily/` 目录中的每个 CSV 文件对应一个交易日（文件名格式：`YYYYMMDD.csv`），包含当日所有股票的行情数据。
-
-## 快速开始
-
-### 1. 准备数据
-
-将原始数据按上述结构放入 `data/` 目录，然后构建标准化特征 parquet：
-
-```python
-from src.data.loader import load_all
-from src.data.features import compute_features
-from src.data.preprocess import preprocess
-
-# 加载原始数据
-raw = load_all("data")
-
-# 计算 66 个基础特征
-features = compute_features(raw)
-
-# 清洗 + z-score 标准化
-normalized = preprocess(features)
-normalized.to_parquet("cache/normalized_features.parquet")
-```
-
-### 2. 构建缓存
+### 1. 特征工程与缓存构建
 
 ```bash
-# 构建所有 split 的特征序列缓存 (train/val/holdout)
-python build_caches.py --split all
-
-# 构建 peer dynamics 缓存
-python build_peer_dynamics.py
+python build_caches.py --split all     # 构建 train/val/holdout 三段序列缓存 (L=40 滑动窗口)
+python build_peer_dynamics.py          # 构建 24 维 peer dynamics 缓存
 ```
 
-缓存文件（自动生成于 `cache/` 目录）：
-- 特征序列: `cache/{split}_L40_step{step}.pt`
-- Peer dynamics: `cache/v7_peer_dynamics_{split}_L40_step{step}.pt`
+自动生成于 `cache/`：标准化特征表 `normalized_features.parquet`、序列缓存 `{split}_L40_step{step}.pt`、peer dynamics 缓存 `v7_peer_dynamics_{split}_L40_step{step}.pt`。
 
-### 3. 训练
+### 2. 训练
 
-#### Stage 1: Backbone 预训练
+**Stage 1 — Backbone 预训练**（报告 Section 2.4.1）：
 
 ```bash
 python train.py --stage1
 ```
 
-输出: `output/transformer_v5/stage1_best.pt`
+损失函数为 Pairwise Ranking Loss，优化目标为验证集 Top-20 Excess Return，输出 `output/transformer_v5/stage1_best.pt`。
 
-#### Stage 2: V9CA_AB 联合训练
+**Stage 2 — CLIME 完整训练**（报告 Section 2.4.2）：
 
 ```bash
-# 最优配置 (init_scale=0.3)
-python train.py --v9ca-ab --init-scale 0.3 --epochs 25
+python train.py --clime --init-scale 0.3 --epochs 25
 ```
 
-训练分三阶段：
+三阶段课程训练：
 
-| 阶段 | Loss | Backbone LR | Modulator LR | 说明 |
-|------|------|-------------|--------------|------|
-| Phase 1 (BCE) | BCEWithLogits | frozen | 1e-3 | 仅训练 encoder + head, 3 epochs |
-| Phase 2 (Reg) | DirectionalReg | 1e-5 | 5e-4 | 解冻 backbone 联合训练, 12 epochs |
-| Phase 3 (FT) | DirectionalReg | 1e-6 | 5e-5 | 微调 |
+| Phase | Epochs | Loss | Backbone LR | Encoder LR | Head LR | 说明 |
+|---|---|---|---|---|---|---|
+| 1 (BCE Warmup) | 1–3 | BCEWithLogits | frozen | 1×10⁻³ | 1×10⁻³ | 仅训练 encoder + head |
+| 2 (Core) | 4–15 | DirectionalReg | 1×10⁻⁵ | 5×10⁻⁴ | 5×10⁻⁴ | 解冻 backbone 联合训练 |
+| 3 (Fine-tune) | 16–25 | DirectionalReg | 1×10⁻⁶ | 5×10⁻⁵ | 1×10⁻⁵ | 全部 LR 降低精调 |
 
-### 4. 回测
+`--init-scale` 控制市场信息注入的初始幅度（报告附录 D）。grid search 最优值为 **0.3**；过大（0.5）会让市场信号覆盖 Backbone 判断，过小（0.1）则注入不足。
+
+### 3. 回测评估（报告 Section 3.2）
 
 ```bash
-# 全部 split
-python backtest.py --v9ca-ab --stage1 output/transformer_v5/stage1_best.pt
+# 在 val + holdout 上运行
+python backtest.py --clime --stage1 output/transformer_v5/stage1_best.pt
 
-# 仅 holdout, 自定义持仓数
-python backtest.py --v9ca-ab --split holdout_v5 \
-    --v9ca-ab-ckpt output/transformer_v5/transformer_v9ca_ab_is0p3_best.pt \
+# 仅 holdout，自定义 top-K
+python backtest.py --clime --split holdout_v5 \
+    --clime-ckpt output/transformer_v5/clime_is0p3_best.pt \
     --stage1 output/transformer_v5/stage1_best.pt \
     --n 20
 ```
 
-### 5. 每日推理
+评估协议：Top-K 等权日调仓、零交易成本、t+1 日收盘价成交。该协议隔离模型排序信号，不与真实策略净收益直接可比。
+
+### 4. 每日推理（报告 Section 4）
 
 ```bash
 python daily_inference.py --date 20260530 \
-    --model-path output/transformer_v5/transformer_v9ca_ab_is0p3_best.pt \
+    --model-path output/transformer_v5/clime_is0p3_best.pt \
     --capital 1000000 --lambda-risk 0.3 --top-n 20
 ```
 
-选股流程：alpha score 排序 -> top-10% 候选池 -> `combined = z(alpha) - 0.3 * z(risk)` -> 取 top-20 -> 温度 softmax 分配权重。
+选股流程：
 
-## CLI 参数参考
+1. CLIME 模型输出所有可交易股票的 alpha 分数；
+2. 风险估计器输出风险分数（报告 Section 2.5，附录 G）；
+3. Alpha top-10% 候选池内：`final = z(alpha) − λ · z(risk)`；
+4. 取 final top-20，温度 softmax 分配权重。
 
-### train.py
+离线实验中 λ = 0；模拟交易中建议 λ = 0.3。
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `--stage1` | flag | — | Stage1 backbone 预训练 |
-| `--v9ca-ab` | flag | — | V9CA_AB 联合训练 |
-| `--stage1-ckpt` | str | None | Stage1 checkpoint 路径 |
-| `--init-scale` | float | 0.1 | V9CA_AB 初始 scale（推荐 0.3） |
-| `--resume` | str | None | 从 checkpoint 恢复训练 |
-| `--epochs` | int | None | 覆盖 max_epochs |
-| `--batch-size` | int | None | 覆盖 batch_size |
-| `--feat-dim` | int | None | 特征维度 (67 或 72) |
-| `--d-model` | int | 256 | Transformer 模型维度 |
-| `--n-heads` | int | 8 | 注意力头数 |
-| `--n-layers` | int | 4 | Transformer 层数 |
-| `--ffn-hidden` | int | 1024 | FFN 隐藏层维度 |
+## 交易模拟
 
-### backtest.py
+作为端到端压力测试，项目在 2026 年 6 月初（06-01 至 06-11，约 9 个交易日）用 CLIME alpha 分数叠加风险过滤（λ=0.3）进行了一次同花顺模拟交易。最终收益为 **−19.40%**（选股成功率 21.90%），显著弱于离线回测结果。
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `--v9ca-ab` | flag | — | 运行 V9CA_AB 回测 |
-| `--split` | str | both | `val_v5` / `holdout_v5` / `both` |
-| `--v9ca-ab-ckpt` | str | None | V9CA_AB checkpoint 路径 |
-| `--stage1` | str | None | Stage1 checkpoint 路径 |
-| `--n` | int | 20 | 持仓股票数 |
-| `--device` | str | cuda | 计算设备 |
+逐日调仓复盘（[trading_simulation_summary.md](final_report/trading_simulation_summary.md)、[trading_records_from_pic.md](final_report/trading_records_from_pic.md)）显示，该结果主要来自日频信号与盘中人工执行的协议差异：
 
-### daily_inference.py
+- 无固定调仓时点，人工盘中手动下单，日内波动造成执行偏差；
+- 先卖后买的资金释放约束；
+- 弱势市场下的人工择时压力；
+- 后期仓位集中。
 
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `--date` | str | None | 目标日期 (YYYYMMDD) |
-| `--dates` | str | None | 多日期 (逗号分隔) |
-| `--model-path` | str | None | 模型 checkpoint 路径 |
-| `--lambda-risk` | float | 0.3 | 风险惩罚权重 |
-| `--top-n` | int | 20 | 选股数 |
-| `--top-pct` | float | 0.10 | 第一阶段候选池比例 |
-| `--capital` | float | None | 总资金量 (元) |
-| `--temperature` | float | 0.5 | Softmax 温度 |
-| `--rebuild` | flag | — | 强制重建原始面板和特征 |
-| `--no-cuda` | flag | — | 强制 CPU |
-| `--output` | str | None | CSV 输出路径 |
+因此该结果被解释为**执行层异常案例**，而不是对 CLIME 离线排序能力的否定——它说明 alpha predictor、risk/scoring、portfolio selection 与 execution 必须作为不同模块分别建模（报告 Section 4）。
 
-## 模型演进
+## 消融实验
 
-| 版本 | 架构 | 关键改变 | Holdout 超额 |
-|------|------|---------|-------------|
-| V5 | Pure Transformer | Stage1 backbone (pairwise ranking) | +197.99% |
-| V7 | V5 + FiLM | 乘法调制 (`h' = gamma*h + beta`) | +127.70% (退化) |
-| V8 | V5 + Per-Feature Scale | 67-dim feature-wise scaling | +139.93% (退化) |
-| V9 | V5 + Additive Injection | `h' = h + offset`, 信息瓶颈 | 架构基础 |
-| V9CA | V9 + Unit-Norm Offset | 方向性 offset, 丢弃幅度 | +95.84% |
-| **V9CA_AB is0.3** | **V9CA + Gate + Scale** | **per-stock gate, tanh-bounded scale, init_scale=0.3** | **+148.44%, Sharpe 7.98** |
+CLIME 的最终性能由四类组件共同决定（报告 Section 3, RQ2）：
 
-### 为什么 V7/V8 退化而 V9CA_AB 成功？
+| 消融变体 | 操作 | 超额收益变化 | 关键结论 |
+|---|---|---|---|
+| T1_MSE | DirectionalReg → Huber | −57 pp | 方向感知权重对 top-K 收益至关重要 |
+| T2_NoCur | 跳过 BCE 方向预热 | −128 pp | 直接解冻 backbone 会破坏预训练表示 |
+| T3_NoS1 | 跳过 Stage 1 预训练 | −150 pp | 随机初始化 backbone 无法在 Stage 2 收敛 |
+| E1_NoEnc | 移除 ScaledGatedEncoder | −74 pp | 市场注入整体重要 |
 
-| 设计 | 调制方式 | 问题 |
-|------|---------|------|
-| V7 FiLM | `gamma*h + beta` | 乘法调制使 gamma 直接缩放 backbone 表征，训练不稳定 |
-| V8 Per-Feature | 67-dim channel-wise scale | 在特征空间调制破坏了 backbone 学到的表示结构 |
-| V9CA_AB | `h + gate*scale*unit_offset` | 加法保持 backbone 原始信息，gate 提供选择性，unit-norm 防止梯度短路 |
+消融影响排序：**训练策略（T3, T2）> 架构组件（E1）> 损失函数（T1）**。完整讨论见报告 Section 3 (RQ2) 及 Section 5 (Discussion)。
+
+## 版本演进概要
+
+完整版本演进表见报告附录 E。下表仅保留关键转折点（附录 E 采用与 RQ1 略有不同的市场基准计算粒度，故 V9CA_AB is0.3 在附录中记为 +148.44% 累计 / +133.29% 超额，正文 RQ1 口径为 +137.15% 累计 / +123.14% 超额）：
+
+| 版本 | 关键改动 | Holdout 超额 | 结论 |
+|---|---|---|---|
+| V5 | 纯 Transformer + Stage1 pairwise | +111.01% | 基线确立 |
+| V7 | FiLM 乘性调制 | +40.72% | **乘性调制属于结构性陷阱** |
+| V9CA | 加法注入 `h' = h + offset` | +80.69% | 架构方向正确 |
+| V9CA_AB is0.3 | +gate + tanh scale (init=0.3) | **+133.29%** | **当前最优** |
+| V9CA_AB is0.5 | init_scale 过大 | +86.56% | 市场信号过强侵蚀 Backbone |
+| V11 | Attn Pooling + 87 维 + Hard Mining | −4.59% | 三项未验证改动堆叠 → 报废（反面教训） |
+
+核心教训：
+
+1. **乘性调制是本任务的结构性陷阱**：FiLM 的各项变体全部退化。
+2. **加法注入是正确范式**：`h' = h + offset` 作为修正项，保留 Backbone 主信号。
+3. **逐项验证是工程纪律**：V11 一次堆叠三项改动直接导致模型报废，此后每个改动单独验证。
+4. **init_scale 存在最优区间**：0.1 → 0.3 梯度提升，0.5 开始退化。
+
+## 复现说明
+
+- **原始数据不入库**：`data/` 需自行从课程获取并按上述结构放置；`cache/` 与 `output/` 均为本地构建产物。
+- **收益为信号上限**：所有回测数字不含交易成本/滑点/涨跌停/T+1 约束，不可直接视为可实现净收益（见报告附录 B）。
+- **checkpoint 复现消融**：`stage1_best.pt`（Stage 1 预训练）、`clime_is0p3_best.pt`（完整 CLIME）、`ablation_t1_mse_best.pt`、`ablation_t2_no_curriculum_best.pt`、`ablation_t3_no_stage1_best.pt`、`ablation_e1_no_encoder_best.pt` 分别对应报告 RQ2 四个消融变体，可用 `backtest.py --clime --clime-ckpt <path>` 加载复现。
+- **结果稳定性**：从随机初始化重新训练得到的模型在 holdout 集上的核心收益指标与 best checkpoint 差异控制在约 5% 以内，结果不是单次随机种子或 checkpoint 选择的偶然产物（报告附录 C）。
 
 ## FAQ
 
-**Q: 训练 OOM？**
-减小 batch_size 或使用 `--feat-dim 67`。
+**训练/回测时 CUDA OOM？**
+减小 `--batch-size`，或使用 `--device cpu`。Stage 1 默认 batch_size=2048，Stage 2 默认 batch_size=256。
 
-**Q: 回测时 CUDA OOM？**
-使用 `--device cpu` 或在运行前清理 GPU。
+**Checkpoint 加载报 missing keys？**
+正常现象。Stage 1 checkpoint 中的 `attn_pool` 和 `head` 权重在 CLIME (Stage 2) 中不使用——CLIME 手动拆开 Backbone 使用 last-token 聚合，并创建独立的 prediction head。训练脚本会打印 missing keys 数量供确认。
 
-**Q: checkpoint 加载报 missing keys？**
-正常现象。Stage1 checkpoint 中的 attn_pool 权重在 V9CA_AB 中不使用（V9CA_AB 使用 last-token extraction），训练脚本会打印 missing keys 数量供确认。
+**特征缓存维度比 67 大？**
+缓存存储的是全量 87 维（86 base + lag_norm），包含 V11 的 20 个额外特征。Stage 2 训练和推理时通过 `CLIME_FEATURE_INDICES = list(range(66)) + [86]` 自动切片到 67 维。不需要重建缓存。
+
+**为什么输出目录叫 `transformer_v5`？**
+该目录名保留自项目早期版本（V5 为第一个可用版本），当前 CLIME 模型仍使用同一输出路径以保证向后兼容。
+
+## 许可与致谢
+
+本项目为「深度学习基础」课程大作业。作者：费维瀚（PB24000347）、赵瀚焜、寇之洲（组员分工见 [final_report/main.pdf](final_report/main.pdf) 首页脚注）。
+
+数据来自课程提供的 A 股日频行情（聚宽数据），本仓库不包含原始数据。方法设计参考了学习排序（Joachims 2002; Burges 2005）、RLHF 偏好范式（Christiano 2017; Ouyang 2022）、课程学习（Bengio 2009）以及加性注入方法（Adapter / LoRA / ControlNet），详细文献梳理见 [final_report/literature_survey.md](final_report/literature_survey.md)。

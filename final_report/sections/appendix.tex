@@ -1,0 +1,503 @@
+% ============================================================
+%  Appendix
+% ============================================================
+\appendix
+
+% ============================================================
+%  A. Feature Definitions
+% ============================================================
+\section{Feature Definitions}
+\label{sec:appendix_features}
+
+\subsection{Stock Features (67-dimensional)}
+
+表\ref{tab:appendix_features}列出了CLIME使用的67维个股特征（索引 0--65（feat\_1至feat\_66）加上第66维位置编码，即feat\_1至feat\_66加上lag\_norm位置编码），按8个类别分组。所有特征在每个交易日独立进行横截面z-score标准化。
+
+{\small
+\begin{longtable}{@{}rllp{5.5cm}@{}}
+\caption{67维个股特征定义。``cs\_z''前缀表示当日横截面z-score标准化。}\label{tab:appendix_features}\\
+\toprule
+Idx & Name & Category & Formula / Description \\
+\midrule
+\endfirsthead
+\multicolumn{4}{c}{\tablename~\thetable\ (continued)} \\
+\toprule
+Idx & Name & Category & Formula / Description \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+% --- Returns (8) ---
+0  & ret\_1d                 & Returns & $\text{close}_t / \text{close}_{t-1} - 1$ \\
+1  & ret\_3d                 & Returns & $\text{close}_t / \text{close}_{t-3} - 1$ \\
+2  & ret\_5d                 & Returns & $\text{close}_t / \text{close}_{t-5} - 1$ \\
+3  & ret\_10d                & Returns & $\text{close}_t / \text{close}_{t-10} - 1$ \\
+4  & ret\_20d                & Returns & $\text{close}_t / \text{close}_{t-20} - 1$ \\
+5  & log\_ret\_1d            & Returns & $\ln(\text{close}_t / \text{close}_{t-1})$ \\
+6  & intraday\_return        & Returns & $\text{close}_t / \text{open}_t - 1$ \\
+7  & overnight\_gap          & Returns & $\text{open}_t / \text{close}_{t-1} - 1$ \\
+\midrule
+% --- Price/Volume (6) ---
+8  & high\_low\_range        & Price/Volume & $\text{high}_t / \text{low}_t - 1$ \\
+9  & close\_to\_vwap         & Price/Volume & $\text{close}_t / \text{vwap}_t - 1$ \\
+10 & volume\_log             & Price/Volume & $\ln(1 + \text{vol}_t)$ \\
+11 & amount\_log             & Price/Volume & $\ln(1 + \text{amount}_t)$ \\
+12 & volume\_ma5\_ratio       & Price/Volume & $\text{vol}_t / \text{mean}(\text{vol}_{t-5:t-1}) - 1$ \\
+13 & amount\_ma20\_ratio      & Price/Volume & $\text{amount}_t / \text{mean}(\text{amount}_{t-20:t-1}) - 1$ \\
+\midrule
+% --- Technical (8) ---
+14 & ma5\_gap                & Technical & $\text{close}_t / \text{MA5}_t - 1$ \\
+15 & ma20\_gap               & Technical & $\text{close}_t / \text{MA20}_t - 1$ \\
+16 & ma5\_ma20\_gap           & Technical & $\text{MA5}_t / \text{MA20}_t - 1$ \\
+17 & rolling\_vol\_20d        & Technical & $\text{std}(\text{ret\_1d}_{t-20:t-1})$ \\
+18 & high\_low\_position\_20d  & Technical & $(\text{close}_t - \text{low}_{20}) / (\text{high}_{20} - \text{low}_{20})$ \\
+19 & rsi\_14                 & Technical & $100 \cdot \overline{\text{gain}}_{14} / (\overline{\text{gain}}_{14} + \overline{\text{loss}}_{14})$ \\
+20 & macd\_hist              & Technical & $\text{EMA}_{12} - \text{EMA}_{26} - \text{EMA}_9(\text{EMA}_{12} - \text{EMA}_{26})$ \\
+21 & bollinger\_z\_20d        & Technical & $(\text{close}_t - \text{MA20}_t) / \text{std}_{20}$ \\
+\midrule
+% --- Fundamental (7) ---
+22 & turnover\_rate          & Fundamental & 日换手率 (来自 metric 表) \\
+23 & volume\_ratio           & Fundamental & 量比 (来自 metric 表) \\
+24 & pb                     & Fundamental & 市净率 (来自 metric 表) \\
+25 & pe\_ttm                & Fundamental & 滚动市盈率 (来自 metric 表) \\
+26 & ps\_ttm                & Fundamental & 滚动市销率 (来自 metric 表) \\
+27 & log\_total\_mv          & Fundamental & $\ln(1 + \text{total\_mv})$ \\
+28 & log\_circ\_mv           & Fundamental & $\ln(1 + \text{circ\_mv})$ \\
+\midrule
+% --- Money Flow (6) ---
+29 & net\_mf\_amount\_ratio   & MoneyFlow & $\text{net\_mf\_amount} / \text{amount}$ \\
+30 & main\_force\_net\_ratio  & MoneyFlow & $(\text{buy\_lg} + \text{buy\_elg} - \text{sell\_lg} - \text{sell\_elg}) / \text{amount}$ \\
+31 & small\_order\_net\_ratio & MoneyFlow & $(\text{buy\_sm} - \text{sell\_sm}) / \text{amount}$ \\
+32 & large\_order\_buy\_ratio & MoneyFlow & $(\text{buy\_lg} + \text{buy\_elg}) / \text{amount}$ \\
+33 & large\_order\_sell\_ratio& MoneyFlow & $(\text{sell\_lg} + \text{sell\_elg}) / \text{amount}$ \\
+34 & main\_force\_momentum\_5d& MoneyFlow & $\text{mean}(\text{main\_force\_net\_ratio}_{t-5:t-1})$ \\
+\midrule
+% --- Market Index (9) ---
+35 & sh\_ret\_1d             & Market Index & 上证指数日收益率 \\
+36 & sh\_ret\_5d             & Market Index & 上证指数 5 日收益率 \\
+37 & hs300\_ret\_1d          & Market Index & 沪深 300 日收益率 \\
+38 & hs300\_ret\_5d          & Market Index & 沪深 300 5 日收益率 \\
+39 & cyb\_ret\_1d            & Market Index & 创业板指日收益率 \\
+40 & cyb\_ret\_5d            & Market Index & 创业板指 5 日收益率 \\
+41 & hs300\_vol\_20d         & Market Index & 沪深 300 20 日滚动波动率 \\
+42 & hs300\_ma5\_ma20\_gap    & Market Index & 沪深 300 MA5/MA20 $-1$ \\
+43 & hs300\_drawdown\_20d    & Market Index & $\text{close} / \max_{20}(\text{close}) - 1$ \\
+\midrule
+% --- Market Breadth (6) ---
+44 & market\_avg\_ret\_1d     & Market Breadth & 全市场 ret\_1d 横截面均值 \\
+45 & market\_median\_ret\_1d  & Market Breadth & 全市场 ret\_1d 横截面中位数 \\
+46 & market\_advancing\_ratio & Market Breadth & ret\_1d $> 0$ 的股票占比 \\
+47 & market\_cross\_section\_vol & Market Breadth & 全市场 ret\_1d 横截面标准差 \\
+48 & market\_top\_bottom\_spread & Market Breadth & top-20\% 均值 $-$ bottom-20\% 均值 \\
+49 & market\_amount\_change\_5d& Market Breadth & 全市场成交额 5 日变化率 \\
+\midrule
+% --- Cross-Sectional Relative (10) ---
+50 & cs\_z\_ret\_5d           & Cross-Sectional & ret\_5d 横截面 z-score \\
+51 & cs\_z\_ret\_20d          & Cross-Sectional & ret\_20d 横截面 z-score \\
+52 & cs\_z\_amount            & Cross-Sectional & amount 横截面 z-score \\
+53 & cs\_z\_turnover\_rate    & Cross-Sectional & turnover\_rate 横截面 z-score \\
+54 & cs\_z\_log\_total\_mv    & Cross-Sectional & log\_total\_mv 横截面 z-score \\
+55 & cs\_z\_pb               & Cross-Sectional & pb 横截面 z-score \\
+56 & cs\_z\_main\_force\_net\_ratio & Cross-Sectional & main\_force\_net\_ratio 横截面 z-score \\
+57 & cs\_rank\_ret\_5d        & Cross-Sectional & ret\_5d 横截面百分位排名 \\
+58 & cs\_rank\_amount         & Cross-Sectional & amount 横截面百分位排名 \\
+59 & cs\_rank\_main\_force    & Cross-Sectional & main\_force\_net\_ratio 横截面百分位排名 \\
+\midrule
+% --- Industry Relative (6) ---
+60 & industry\_ret\_1d        & Industry & 同行业 ret\_1d 均值 \\
+61 & industry\_ret\_5d        & Industry & 同行业 ret\_5d 均值 \\
+62 & relative\_industry\_ret\_1d & Industry & ret\_1d $-$ industry\_ret\_1d \\
+63 & relative\_industry\_ret\_5d & Industry & ret\_5d $-$ industry\_ret\_5d \\
+64 & industry\_advancing\_ratio & Industry & 同行业 ret\_1d $> 0$ 占比 \\
+65 & relative\_industry\_moneyflow & Industry & main\_force\_net\_ratio $-$ 行业均值 \\
+\midrule
+% --- Positional Encoding (1) ---
+66 & lag\_norm               & Positional & $[0, 1, \dots, L-1] / (L-1)$，广播至所有时间步 \\
+\bottomrule
+\end{longtable}
+}
+
+\subsection{Peer Dynamics Features (24-dimensional)}
+
+对于每只股票，基于多维度加权相似度（行业 0.30 + 业务名称 0.25 + 地区 0.10 + 市场 0.10 + 企业类型 0.10 + 20日收益相关性 0.15）选取 top-10 最相似的同业股票，聚合得到 24 维同业动态特征。聚合所用原始特征来自最后时间步的 11 维指标：$\{\text{ret\_1d}, \text{ret\_5d}, \text{ret\_20d}, \text{volume\_log}, \text{amount\_log}, \text{turnover\_rate}, \text{rsi\_14}, \text{macd\_hist}, \text{bollinger\_z\_20d}, \text{pb}, \text{log\_total\_mv}\}$。
+
+\begin{table}[H]
+\centering
+\caption{24维Peer Dynamics特征定义。``peer\_*''表示对top-10同业的聚合统计量，``rel\_*''表示个股值减去同业均值。}
+\label{tab:appendix_peer}
+\begin{tabular}{@{}rlll@{}}
+\toprule
+Idx & Name & Category & Aggregation \\
+\midrule
+\multicolumn{4}{c}{\textbf{Peer Return Statistics (7)}} \\
+0  & peer\_mean\_ret\_1d   & Return & Top-10 同业 ret\_1d 均值 \\
+1  & peer\_mean\_ret\_5d   & Return & Top-10 同业 ret\_5d 均值 \\
+2  & peer\_mean\_ret\_20d  & Return & Top-10 同业 ret\_20d 均值 \\
+3  & peer\_std\_ret\_1d    & Return & Top-10 同业 ret\_1d 标准差 \\
+4  & peer\_std\_ret\_5d    & Return & Top-10 同业 ret\_5d 标准差 \\
+5  & peer\_std\_ret\_20d   & Return & Top-10 同业 ret\_20d 标准差 \\
+6  & peer\_spread\_ret\_1d & Return & Top-10 同业 ret\_1d 极差 (max $-$ min) \\
+\midrule
+\multicolumn{4}{c}{\textbf{Volume \& Activity (5)}} \\
+7  & peer\_mean\_volume\_log & Volume & Top-10 同业 volume\_log 均值 \\
+8  & peer\_std\_volume\_log  & Volume & Top-10 同业 volume\_log 标准差 \\
+9  & peer\_mean\_turnover   & Activity & Top-10 同业 turnover\_rate 均值 \\
+10 & peer\_std\_turnover    & Activity & Top-10 同业 turnover\_rate 标准差 \\
+11 & peer\_mean\_amount\_log & Volume & Top-10 同业 amount\_log 均值 \\
+\midrule
+\multicolumn{4}{c}{\textbf{Technical Indicators (4)}} \\
+12 & peer\_mean\_rsi       & Technical & Top-10 同业 rsi\_14 均值 \\
+13 & peer\_mean\_macd      & Technical & Top-10 同业 macd\_hist 均值 \\
+14 & peer\_std\_macd       & Technical & Top-10 同业 macd\_hist 标准差 \\
+15 & peer\_mean\_bollinger & Technical & Top-10 同业 bollinger\_z\_20d 均值 \\
+\midrule
+\multicolumn{4}{c}{\textbf{Fundamentals (2)}} \\
+16 & peer\_mean\_pb        & Fundamental & Top-10 同业 pb 均值 \\
+17 & peer\_mean\_log\_mv   & Fundamental & Top-10 同业 log\_total\_mv 均值 \\
+\midrule
+\multicolumn{4}{c}{\textbf{Stock-vs-Peer Relative Deviation (6)}} \\
+18 & rel\_ret\_1d    & Relative & ret\_1d $-$ peer\_mean\_ret\_1d \\
+19 & rel\_ret\_5d    & Relative & ret\_5d $-$ peer\_mean\_ret\_5d \\
+20 & rel\_ret\_20d   & Relative & ret\_20d $-$ peer\_mean\_ret\_20d \\
+21 & rel\_volume     & Relative & volume\_log $-$ peer\_mean\_volume\_log \\
+22 & rel\_turnover   & Relative & turnover\_rate $-$ peer\_mean\_turnover \\
+23 & rel\_rsi        & Relative & rsi\_14 $-$ peer\_mean\_rsi \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================
+%  B. Evaluation Details
+% ============================================================
+\section{Evaluation Details}
+\label{sec:appendix_eval_details}
+
+\subsection{Leakage Prevention Details}
+
+为避免前瞻偏差，数据管线中所有特征均按交易日$t$对齐，且只使用$t$日及以前可获得的信息。例如，20日动量仅使用$[t-19,t]$区间的历史收盘价，RSI-14仅使用历史涨跌幅窗口，Peer Dynamics也只基于$t$日可得的同业信息聚合。预测标签为$t+1$日收益率，不参与任何特征计算。
+
+横截面预处理同样逐日进行：缺失值以当日横截面中位数填充，极端值以当日1\%和99\%分位数Winsorize，z-score标准化仅使用当日全市场均值与标准差。我们没有使用跨日期标准化、全样本特征选择或任何lookahead feature。
+
+训练集、验证集和holdout按时间顺序严格切分。训练集截止于2025年9月17日，验证集从2025年9月18日开始，二者日历相邻但样本日期不重叠。训练集采用step=10稀疏采样以降低相邻交易日高自相关对训练的影响；验证集与holdout采用step=1全密度评估。2026年5月12日至5月26日的9个交易日作为纯未来验证集，不参与训练、验证、holdout评估或任何模型选择。
+
+\subsection{Differences from Real Trading}
+
+本文主实验的目标是隔离模型选股能力，因此回测协议相对理想化。真实A股交易至少还需要考虑以下因素：
+
+\begin{itemize}[leftmargin=*, itemsep=2pt]
+    \item \textbf{交易成本和滑点}：A股交易包含印花税、佣金和过户费等成本。每日调仓会带来较高换手，实际净收益会低于本文报告的模型信号收益。
+    \item \textbf{涨跌停约束}：触及涨停的股票可能无法买入，触及跌停的股票可能无法卖出，极端行情下该限制会影响组合可执行性。
+    \item \textbf{成交价格假设}：本文以$t+1$日收盘收益评估信号，但实际交易中的开盘、盘中或收盘成交价格都会带来不同执行误差。
+    \item \textbf{流动性约束}：对于小市值股票，等权top-20组合可能受到市场深度限制，真实资金规模越大，冲击成本越重要。
+    \item \textbf{持有期设计}：本文采用单日持有和每日调仓；完整交易系统还需要选择持有期、换手约束和动态仓位管理。
+\end{itemize}
+
+因此，本文收益应被理解为选股排序信号的上限估计，而非完整交易系统的可实现净收益。
+
+% ============================================================
+%  C. Reproduction Guide
+% ============================================================
+\section{Reproduction Guide}
+\label{sec:appendix_reproduction}
+
+完整代码和模型权重可在 GitHub 获取：\url{https://github.com/wesleyfei1/CLIME}。
+
+\subsection*{Environment Setup}
+
+\begin{verbatim}
+git clone https://github.com/wesleyfei1/CLIME.git
+cd CLIME/reconstruct_code
+pip install -r requirements.txt
+\end{verbatim}
+
+依赖：\texttt{torch}, \texttt{numpy}, \texttt{pandas}, \texttt{scipy}, \texttt{tqdm}, \texttt{pyarrow}。推荐使用 Python 3.10+ 和 CUDA 12.1+。
+
+\subsection*{Data Preparation}
+
+将原始数据按以下结构放入 \texttt{data/} 目录：
+
+\begin{verbatim}
+data/
+|-- basic.csv              # 股票基础信息
+|-- trade_cal.csv          # 交易日历
+|-- daily/                 # 个股日频行情 (YYYYMMDD.csv)
+|-- daily_open/            # 开盘价数据
+|-- metric/                # 基本面指标 (PE, PB, 换手率等)
+|-- moneyflow/             # 资金流向 (大单/中单/小单)
+|-- market/                # 市场指数 (上证, 沪深300, 创业板)
+|-- index_weight/          # 指数成分股权重
+|-- stock_st/              # ST 股票清单
+`-- news/                  # 新闻快讯
+\end{verbatim}
+
+\subsection*{Build Feature Caches}
+
+\begin{verbatim}
+# 1. 从原始数据计算标准化特征 parquet
+python -c "
+from src.data.loader import load_all
+from src.data.features import compute_features
+from src.data.preprocess import preprocess
+raw = load_all('data')
+features = compute_features(raw)
+normalized = preprocess(features)
+normalized.to_parquet('cache/normalized_features.parquet')
+"
+
+# 2. 构建特征序列缓存 (train/val/holdout)
+python build_caches.py --split all
+
+# 3. 构建 peer dynamics 缓存
+python build_peer_dynamics.py
+\end{verbatim}
+
+\subsection*{Train the Model}
+
+\begin{verbatim}
+# Stage 1: Backbone 预训练 (pairwise ranking)
+python train.py --stage1
+
+# Stage 2: V9CA_AB 联合训练 (init_scale=0.3)
+python train.py --v9ca-ab --init-scale 0.3 --epochs 25 \
+    --stage1-ckpt output/transformer_v5/stage1_best.pt
+\end{verbatim}
+
+训练完成后，最佳模型保存于
+\path{output/transformer_v5/transformer_v9ca_ab_is0p3_best.pt}。
+
+\subsection*{Run Backtest}
+
+\begin{verbatim}
+python backtest.py --v9ca-ab --split holdout_v5 \
+    --v9ca-ab-ckpt output/transformer_v5/transformer_v9ca_ab_is0p3_best.pt \
+    --stage1 output/transformer_v5/stage1_best.pt \
+    --n 20
+\end{verbatim}
+
+\subsection*{Daily Inference (Optional)}
+
+\begin{verbatim}
+python daily_inference.py --date 20260530 \
+    --model-path output/transformer_v5/transformer_v9ca_ab_is0p3_best.pt \
+    --capital 1000000 --lambda-risk 0.3 --top-n 20
+\end{verbatim}
+
+% ============================================================
+%  C. Complete Hyperparameters
+% ============================================================
+\section{Complete Hyperparameters}
+\label{sec:appendix_hyperparams}
+
+表\ref{tab:appendix_hyperparams_all}列出了CLIME训练和模型架构的全部超参数。
+
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{0.84}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{2.2cm}>{\raggedright\arraybackslash}p{4.0cm}>{\raggedright\arraybackslash}p{7.0cm}@{}}
+\caption{CLIME完整超参数配置}
+\label{tab:appendix_hyperparams_all}\\
+\toprule
+Category & Hyperparameter & Value \\
+\midrule
+\endfirsthead
+\multicolumn{3}{c}{\tablename~\thetable\ (continued)} \\
+\toprule
+Category & Hyperparameter & Value \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\multicolumn{3}{c}{\textbf{Architecture}} \\
+& Backbone type & Transformer (Pre-LN) \\
+& Input feature dim & 67 \\
+& Hidden dim $d$ & 256 \\
+& Attention heads & 8 \\
+& Transformer layers & 4 \\
+& FFN hidden dim & 1024 \\
+& Position encoding & RoPE \\
+& Aggregation & Last-token extraction \\
+& Total params (Backbone) & $\sim$2.3M \\
+\midrule
+\multicolumn{3}{c}{\textbf{ScaledGatedEncoder}} \\
+& Peer dynamics dim & 24 \\
+& Market context dim & 8 \\
+& Encoder input dim & 32 (= 24 + 8) \\
+& Encoder hidden dim & 256 \\
+& Encoder layers & 3 (Linear $\to$ LN $\to$ ReLU) \\
+& Gate network & 8 $\to$ 64 $\to$ 1 $\to$ $\sigma$ \\
+& Logit scale init & 0.3 (optimized via grid search) \\
+& Modulation formula & $h' = h + g \cdot \tanh(s) \cdot \frac{\hat{\mathbf{u}}}{\|\hat{\mathbf{u}}\|} \cdot \sqrt{256}$ \\
+& Total params (Encoder) & $\sim$0.5M \\
+\midrule
+\multicolumn{3}{c}{\textbf{Stage 1 — Pairwise Pretraining}} \\
+& Loss function & Pairwise Ranking Loss (softplus) \\
+& Optimizer & Adam \\
+& Learning rate & $5 \times 10^{-4}$ \\
+& LR scheduler & CosineAnnealingLR, $T_{\max}=40$ \\
+& Weight decay & $10^{-5}$ \\
+& Batch size & 2048 \\
+& Max epochs & 40 \\
+& Early stopping patience & 10 \\
+& Gradient clip & 1.0 \\
+& Pairs per day & 5000 \\
+& Margin (min return diff) & 0.002 \\
+\midrule
+\multicolumn{3}{c}{\textbf{Stage 2 — Three-Phase Curriculum}} \\
+& Optimizer & Adam \\
+& LR scheduler & CosineAnnealingLR, $T_{\max}=25$ \\
+& Weight decay & $10^{-5}$ \\
+& Batch size & 256 \\
+& Max epochs & 25 \\
+& Early stopping patience & 8 \\
+& Gradient clip & 1.0 \\
+& Samples per day & 5000 \\
+\midrule
+\multicolumn{3}{c}{\textbf{Phase 1 (BCE Warmup, epochs 1–3)}} \\
+& Loss function & BCEWithLogitsLoss \\
+& Backbone LR & 0 (frozen) \\
+& Encoder LR & $10^{-3}$ \\
+& Head LR & $10^{-3}$ \\
+\midrule
+\multicolumn{3}{c}{\textbf{Phase 2 (Core Training, epochs 4–15)}} \\
+& Loss function & Directional Regression Loss \\
+& Loss $\alpha$ (sign error weight) & 3.0 \\
+& Loss $\beta$ (conservative reduction) & 0.5 \\
+& Loss $\delta$ (Huber threshold) & 0.01 \\
+& Backbone LR & $10^{-5}$ \\
+& Encoder LR & $5 \times 10^{-4}$ \\
+& Head LR & $5 \times 10^{-4}$ \\
+\midrule
+\multicolumn{3}{c}{\textbf{Phase 3 (Fine-tuning, epochs 16–25)}} \\
+& Loss function & Directional Regression Loss (same) \\
+& Backbone LR & $10^{-6}$ \\
+& Encoder LR & $5 \times 10^{-5}$ \\
+& Head LR & $10^{-5}$ \\
+\midrule
+\multicolumn{3}{c}{\textbf{Hardware}} \\
+& GPU & NVIDIA A100 80GB \\
+& Training time (Stage 1) & $\sim$2 hours \\
+& Training time (Stage 2) & $\sim$1.5 hours \\
+\end{longtable}
+\renewcommand{\arraystretch}{1}
+\setlength{\tabcolsep}{6pt}
+\endgroup
+
+% ============================================================
+%  D. Model Version Evolution
+% ============================================================
+\section{Model Version Evolution}
+\label{sec:appendix_versions}
+
+表\ref{tab:appendix_versions}记录了CLIME项目从V5到V12共11个版本的完整演进。评估均在holdout\_v5（2025-12-05至2026-05-11，100个交易日）上进行，Top-20等权日调仓，无交易成本\footnote{版本演进表中的评估协议与RQ1略有不同（市场基准计算方式差异），因此V9CA\_AB is0.3在此处显示为+148.44\%累计/+133.29\%超额，而RQ1中为+137.15\%累计/+123.14\%超额。两者均为正确的，仅在市场等权基准的计算粒度上存在差异。}。
+
+{\scriptsize
+\setlength{\tabcolsep}{2pt}
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{1.5cm}>{\raggedright\arraybackslash}p{2.7cm}>{\raggedright\arraybackslash}p{6.1cm}>{\centering\arraybackslash}p{1.25cm}>{\centering\arraybackslash}p{1.25cm}>{\centering\arraybackslash}p{0.9cm}@{}}
+\caption{CLIME模型版本演进（V5 $\to$ V12）。关键版本以\textbf{粗体}标出。}\label{tab:appendix_versions}\\
+\toprule
+Ver. & Name & Key Change & Cum. & Excess & Sharpe \\
+\midrule
+\endfirsthead
+\multicolumn{6}{c}{\tablename~\thetable\ (continued)} \\
+\toprule
+Ver. & Name & Key Change & Cum. & Excess & Sharpe \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+V5  & Pure Transformer & Stage1 pairwise预训练，标准Transformer Backbone，无任何市场注入 & +197.99\% & +111.01\% & 5.77 \\
+V7  & FiLM Modulation & 引入FiLM乘性调制（$\gamma \odot h + \beta$），市场信号在67维特征空间注入 & +127.70\% & +40.72\% & 4.78 \\
+V7b & FiLM + Gate & 在V7基础上增加per-stock门控，控制调制强度 & +99.20\% & -- & 4.03 \\
+V8  & Per-Feature Scale & 67个独立可学习scale参数逐维度缩放特征，无bottleneck约束 & +139.93\% & +52.95\% & 5.19 \\
+V9  & Market State (3 Principles) & 确立三大设计原则：256维表征空间调制、信息bottleneck、调制不主导 & +20.12\% & +4.97\% & 2.07 \\
+V9CA & Additive Injection & 将乘性调制改为加性注入（$h' = h + \alpha \cdot \text{offset}$），架构突破 & +95.84\% & +80.69\% & 6.17 \\
+V9CA\_AB is0.1 & A+B Joint & 加性注入 + per-stock gate + 全局可学习scale，初版 & +148.44\% & +133.29\% & 7.98 \\
+V9CA\_AB is0.2 & Scale Tuning (0.2) & init\_scale从0.1提升至0.2 & +148.47\% & +133.32\% & 7.89 \\
+\textbf{V9CA\_AB is0.3} & \textbf{Scale Tuning (0.3), Best} & init\_scale = 0.3，平衡Backbone保留与市场自适应；0\%负月，maxDD 6.56\% & \textbf{+148.44\%} & \textbf{+133.29\%} & \textbf{7.98} \\
+V9CA\_AB is0.5 & Scale Tuning (0.5) & init\_scale = 0.5，市场信号过强，Backbone表征开始被扭曲 & +101.71\% & +86.56\% & 5.49 \\
+V10 & Market Context (8-dim) & 新增8维市场上下文特征；encoder几乎未使用，holdout退化 & +127.54\% & +40.56\% & 4.91 \\
+V10B & Diversity Loss & 加入多样性损失鼓励差异化门控；从未激活（threshold过高），训练不稳定 & +19.00\% & +3.85\% & 2.00 \\
+\textbf{V11} & \textbf{Attention Pooling + 87-dim + Hard Mining} & 三项未经验证的改动一次堆叠：注意力池化（近乎随机）、87维特征（15/20为噪声）、课程难例挖掘（loss跳涨10$\times$）。整个项目最有价值的反面教训 & \textbf{+10.56\%} & \textbf{$-$4.59\%} & \textbf{1.22} \\
+\textbf{V12} & \textbf{Selected Features (abandoned)} & 尝试精选特征 + 修复Factor Head Bias Collapse；多轮迭代后回退至V9配置，确认新特征来自V11（bad model）引入噪声。最终放弃，回归V9CA\_AB & \textbf{+12.14\%} & \textbf{$-$3.01\%} & \textbf{1.44} \\
+\bottomrule
+\end{longtable}
+\setlength{\tabcolsep}{6pt}
+}
+
+\section*{Key Lessons from Version Evolution}
+
+\begin{enumerate}[leftmargin=*, itemsep=2pt]
+    \item \textbf{乘性调制是本问题的结构性陷阱}：V7/V7b的FiLM方案导致holdout从+198\%骤降至+128\%/+99\%。乘性调制（$\gamma \odot h$）不可逆地扭曲Backbone已学到的表征。
+    \item \textbf{加性注入是正确范式}：V9CA将注入方式从乘法改为加法（$h' = h + \text{offset}$），holdout从+20\%回升至+96\%，为V9CA\_AB的成功奠定基础。
+    \item \textbf{逐项验证是工程纪律}：V11一次堆叠三项未经验证的改动，直接导致模型报废（holdout仅+10.56\%，超额转负）。此后每个改动单独验证，再未犯过同类错误。
+    \item \textbf{init\_scale存在最优区间}：0.1 $\to$ 0.3逐步提升，0.5时开始退化——市场信号过强会侵蚀Backbone自身的判断力。
+\end{enumerate}
+
+% ============================================================
+%  E. Model Checkpoint Reference
+% ============================================================
+\section{Model Checkpoint Reference}
+\label{sec:appendix_checkpoints}
+
+\begin{table}[H]
+\centering
+\caption{模型checkpoint索引}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Checkpoint & File & Description \\
+\midrule
+Stage1 Backbone & \texttt{stage1\_best.pt} & Pairwise ranking 预训练权重 \\
+V9CA\_AB is0.3 & \texttt{transformer\_v9ca\_ab\_is0p3\_best.pt} & 最优模型 (holdout +123.14\% excess) \\
+T1\_MSE & \texttt{ablation\_t1\_mse\_best.pt} & 消融: MSE loss \\
+T2\_NoCur & \texttt{ablation\_t2\_no\_curriculum\_best.pt} & 消融: 无 BCE 预热 \\
+T3\_NoS1 & \texttt{ablation\_t3\_no\_stage1\_best.pt} & 消融: 无 Stage1 预训练 \\
+E1\_NoEnc & \texttt{ablation\_e1\_no\_encoder\_best.pt} & 消融: 无市场编码器 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================
+%  G. Risk Predictor Configuration
+% ============================================================
+\section{Risk Predictor Configuration}
+\label{sec:appendix_risk}
+
+表\ref{tab:appendix_risk}列出了风险过滤器的完整配置。该过滤器在CLIME模型输出alpha分数后、构建投资组合前执行，用于惩罚高波动、高回撤、低流动性的股票。
+
+\begin{table}[H]
+\centering
+\caption{风险预测器配置参数}
+\label{tab:appendix_risk}
+{\small
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{3.2cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{7.3cm}@{}}
+\toprule
+Parameter & Value & Description \\
+\midrule
+\multicolumn{3}{@{}l}{\textbf{Risk Dimensions (all equal weight)}} \\
+\quad vol\_weight & 1.0 & Weight for 20-day realized volatility \\
+\quad dd\_weight & 1.0 & Weight for 20-day max drawdown \\
+\quad amp\_weight & 1.0 & Weight for 20-day mean daily amplitude \\
+\quad liq\_weight & 1.0 & Weight for $-\log(1+\text{mean\_amount})$ \\
+Lookback & 20 days & Rolling window for all risk metrics \\
+Min periods & 5 days & Minimum data required per stock \\
+\midrule
+\multicolumn{3}{@{}l}{\textbf{Combination}} \\
+Method & Cross-sectional z-score & $(x - \bar{x}) / \sigma_x$ per (date, metric) \\
+Z-score clipping & $\pm 3\sigma$ & Clip z-scores to $[-3, 3]$ before summation \\
+\midrule
+\multicolumn{3}{@{}l}{\textbf{Final Scoring}} \\
+Formula & $\text{final} = z(\alpha) - \lambda \cdot z(\text{risk})$ & \\
+Risk aversion ($\lambda$) & 0.3 & Used only for simulated trading; main experiments use $\lambda=0$ \\
+\midrule
+\multicolumn{3}{@{}l}{\textbf{Two-Stage Filtering}} \\
+Alpha pool size & Top-10\% & First filter by alpha score \\
+Selection & Top-20 & Re-rank within pool by final score \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+\textbf{设计说明}：该风险过滤器是\textbf{规则驱动的工程组件}，不包含任何可训练参数。4个风险维度从原始OHLCV数据直接计算，通过横截面z-score标准化后等权组合。其目的是作为CLIME的工程补充而非核心学术贡献——模型训练和所有实验评估均使用纯alpha分数（$\lambda = 0$）。
+
+Risk cache数据通过pandas rolling窗口在原始面板数据上预计算，存储于\texttt{cache/risk\_cache.pkl}，涵盖val\_v5和holdout\_v5的全部（日期，股票）对。推理和回测脚本通过加载此缓存文件获取风险分数。

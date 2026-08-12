@@ -1,0 +1,122 @@
+% ============================================================
+%  CLIME: Cross-Modal Injection via Learned Market Encoding
+%  深度学习基础课程大作业 — 最终报告
+% ============================================================
+\documentclass[12pt,a4paper]{ctexart}
+
+% ---- Packages ----
+\usepackage[top=2.5cm, bottom=2.5cm, left=2.8cm, right=2.8cm]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{url}
+\hypersetup{hidelinks}
+
+% Force figures to stay in their section
+\numberwithin{figure}{section}
+\numberwithin{table}{section}
+
+% ---- Metadata ----
+\title{\textbf{CLIME: 跨模态市场信息注入的股票排序模型}\thanks{组员分工：费维瀚负责项目整体推进、模型设计与实现、实验分析、模拟交易复盘和报告主体撰写；赵瀚焜、寇之洲参与项目讨论、报告审阅，并对实验呈现和最终表述提供修改建议。} \\
+       \large 深度学习基础课程大作业}
+\author{费维瀚（PB24000347）\\
+赵瀚焜（PB24000385）\quad 寇之洲（PB24000354）}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+% ============================================================
+\input{sections/abstract}
+% ============================================================
+\input{sections/introduction}
+% ============================================================
+\input{sections/methodology}
+% ============================================================
+\input{sections/experiment}
+% ============================================================
+\input{sections/trading}
+% ============================================================
+\input{sections/discussion}
+% ============================================================
+
+% ---- References ----
+\begin{thebibliography}{99}
+
+\bibitem{kahneman1979prospect}
+Kahneman, D., Tversky, A. ``Prospect Theory: An Analysis of Decision under Risk.'' Econometrica, 47(2), 263--291, 1979.
+
+\bibitem{hsee1996evaluability}
+Hsee, C.K. ``The Evaluability Hypothesis: An Explanation for Preference Reversals between Joint and Separate Evaluations of Alternatives.'' Organizational Behavior and Human Decision Processes, 67(3), 247--257, 1996.
+
+\bibitem{joachims2002optimizing}
+Joachims, T. ``Optimizing Search Engines Using Clickthrough Data.'' KDD, 133--142, 2002.
+
+\bibitem{burges2005learning}
+Burges, C., et al. ``Learning to Rank Using Gradient Descent.'' ICML, 89--96, 2005.
+
+\bibitem{rendle2009bpr}
+Rendle, S., et al. ``BPR: Bayesian Personalized Ranking from Implicit Feedback.'' UAI, 452--461, 2009.
+
+\bibitem{bengio2009curriculum}
+Bengio, Y., et al. ``Curriculum Learning.'' ICML, 41--48, 2009.
+
+\bibitem{christiano2017deep}
+Christiano, P., et al. ``Deep Reinforcement Learning from Human Preferences.'' NeurIPS, 2017.
+
+\bibitem{ouyang2022training}
+Ouyang, L., et al. ``Training Language Models to Follow Instructions with Human Feedback.'' NeurIPS, 2022.
+
+\bibitem{michankow2023madl}
+Micha\'{n}k\'{o}w, J., Sakowski, P., \'{S}lepaczuk, R. ``Mean Absolute Directional Loss as a New Loss Function for Machine Learning Problems in Algorithmic Investment Strategies.'' Journal of Computational Science, 2024. arXiv:2309.10546.
+
+\bibitem{michankow2024gmadl}
+Micha\'{n}k\'{o}w, J., Sakowski, P., \'{S}lepaczuk, R. ``Generalized Mean Absolute Directional Loss.'' arXiv:2412.18405, 2024.
+
+\bibitem{lin2026lambdarankic}
+Lin, Y., Su, Y., Yang, Y. ``LambdaRankIC: Directly Optimizing Rank IC for Financial Prediction.'' arXiv:2605.00501, 2026.
+
+\bibitem{poh2020learning}
+Poh, D., et al. ``Building Cross-Sectional Systematic Strategies By Learning to Rank.'' Journal of Financial Data Science, 2024. arXiv:2012.07149.
+
+\bibitem{perez2018film}
+Perez, E., et al. ``FiLM: Visual Reasoning with a General Conditioning Layer.'' AAAI, 2018.
+
+\bibitem{zhang2023controlnet}
+Zhang, L., Rao, A., Agrawala, M. ``Adding Conditional Control to Text-to-Image Diffusion Models.'' ICCV, 2023.
+
+\bibitem{houlsby2019adapter}
+Houlsby, N., et al. ``Parameter-Efficient Transfer Learning for NLP.'' ICML, 2019.
+
+\bibitem{hu2022lora}
+Hu, E.J., et al. ``LoRA: Low-Rank Adaptation of Large Language Models.'' ICLR, 2022.
+
+\bibitem{kakushadze2016alphas}
+Kakushadze, Z. ``101 Formulaic Alphas.'' arXiv:1601.00991, 2016.
+
+\bibitem{transformer}
+Vaswani, A., et al. ``Attention Is All You Need.'' NeurIPS, 2017.
+
+\bibitem{xgboost}
+Chen, T., Guestrin, C. ``XGBoost: A Scalable Tree Boosting System.'' KDD, 2016.
+
+\bibitem{lightgbm}
+Ke, G., et al. ``LightGBM: A Highly Efficient Gradient Boosting Decision Tree.'' NeurIPS, 2017.
+
+\end{thebibliography}
+
+% ============================================================
+\input{sections/appendix}
+% ============================================================
+
+\end{document}
